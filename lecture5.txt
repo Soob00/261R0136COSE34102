@@ -1,0 +1,2538 @@
+    Natural Language Processing
+              COSE461
+
+
+
+
+                   Byung-Jun Lee
+Lecture 5: Transformers & Final Project: Practical Tips
+Final Project: Practical Tips
+
+
+
+
+                                2
+The Final Project
+
+• Conduct a research on any topic that involves human language and neural
+  networks in a team of 1-4 people.
+   • I expect a larger team to present a larger result that involves exploring more models or tasks
+
+
+• You can use any language/framework for your project
+   • Though I expect most of you to keep using PyTorch
+
+
+• On (4/3, 4/10), we will have project proposal presentations for all teams
+   • This year I’m trying to purchase some AWS credit for the course: a small amount, but would
+     help. Hopefully in early April..?
+• Project report will due 5/29 (selected teams will be announced on 6/5)
+• Some selected teams will have presentations on (6/12, 6/19)
+                                                                                                      3
+Project Proposal Presentation
+
+• We have about 7 minutes per team
+   • I will give a brief feedbacks to teams’ presentations, and you can freely change (or
+     keep) your directions
+
+• A good way of doing project proposal:
+   1. Find a relevant (key) research paper for your topic
+   2. Present a short summary of that research paper, especially the key idea you hope
+      to keep
+   3. Present a short plan of what you would be working on, how you can innovate
+       • Suggest a good milestone to have achieved as a halfway point
+   4. Describe as needed
+       • A project plan, relevant existing literature, the kind(s) of models you will use/explore; the data you
+         will use (and how it is obtained), and how you will evaluate success
+
+                                                                                                              4
+Points to consider
+
+
+1. How to think critically about a research paper?
+   • What were the novel contributions or points?
+   • Is what makes it work something general and reusable?
+   • Are there flaws or neat details in what they did?
+   • How does it fit with other papers on similar topics?
+   • Does it provoke good questions on further or different things to try?
+
+
+2. What project proposal is a good proposal?
+   • You need to have an overall sensible idea (!)
+   • But most project plans that are lacking are lacking in nuts-and-bolts ways:
+       • Do you have good data or a realistic plant to be able to collect it?
+       • Do you have a realistic way to evaluate your work?
+       • Do you have appropriate baselines or proposed ablation studies for comparisons?
+
+                                                                                           5
+Project report
+
+
+• Report writing quality is very
+  important to your grade!
+   • Latex template will be provided     Abstract     Prior related
+                                                                      Model       Model
+     – however, you can use other      Introduction       work
+     editors as well (e.g. MS doc)
+   • 1-8 pages
+
+
+• An example report →
+                                                                                Analysis &
+                                          Data        Experiments     Results
+                                                                                Conclusion
+
+
+
+
+                                                                                    6
+Finding Research Topics
+
+
+Two basic starting points, for all of science:
+• [Nails] Start with a (domain) problem of interest and try to find good/better ways
+  to address it than are currently known/used
+• [Hammers] Start with a technical method/approach of interest, and work out
+  good ways to extend or improve it or new ways to apply it
+
+• Unfortunately, for this course I can not offer you much computing resource
+• It’s fine to do small scale topics and experiments (colab 1-GPU scale experiments
+  are fine): let’s do something interesting anyway
+
+
+                                                                                      7
+Project types
+
+This is not an exhaustive list, but most projects are one of
+1.   Find an application/task of interest and explore how to approach/solve it effectively, often with
+     an existing model
+     • Could be task in the wild or some existing Kaggle/bake-off/shared task
+     • If you are not from computer science department, you can try to deal with the data from your own
+       major
+2.   Implement a complex neural architecture and demonstrate its performance on some data
+3.   Come up with a new or variant neural network model and explore its empirical success
+     • All the above are expected to have experiments with numbers and ablations
+4.   Analysis project:
+     • Analyze the behavior of a model: how it represents linguistic knowledge or what kinds of phenomena it
+       can handle or errors that it makes
+5.   Rare theoretical project:
+     • Show some interesting, non-trivial properties of a model type, data, or a data representation
+                                                                                                           8
+Some examples
+• These are from the final projects of the last year
+   • A good selected examples among them.
+
+
+
+
+                                                       9
+10
+11
+Published in AAAI 2026!!: uCLIP: Parameter-Efficient Multilingual Extension of Vision-Language Models with Unpaired Data
+13
+14
+15
+16
+How to find an interesting place to start?
+• Look at ACL anthology for NLP papers:
+   • https://www.aclweb.org/anthology/
+• Also look at the online proceedings of major ML conferences:
+   • NeurIPS https://papers.nips.cc, ICML, ICLR
+• Good project reports last year are uploaded to LMS as well
+• Look at online preprint servers, especially:
+   • https://arxiv.org
+   • http://www.arxiv-sanity.com
+
+
+
+
+                                                                 17
+Want to Beat state of the art on something?
+• Great new sites that try to collate
+  info on the state of the art
+    • Not always correct, though
+    • https://paperswithcode.com/sota
+    • https://nlpprogress.com/
+• Specific tasks/topics. e.g.:
+    • https://gluebenchmark.com/leaderboard/
+    • https://www.conll.org/previous-tasks/
+
+
+
+
+                                               18
+Finding a topic
+• One advice from AI pioneer, Turing and Nobel prize winner Herbert
+  Simon:
+   • “If you see a research area where many people are working, go somewhere
+     else.”
+
+
+• But where to go? Wayne Gretzky:
+   • “I skate to where the puck is going, not where it has been.”
+
+
+
+
+                                                                               19
+Old Deep Learning (NLP), new Deep Learning NLP
+• In the early days of the Deep Learning revival (2010-2018), most of the work was in defining and
+  exploring better deep learning architectures
+• Typical paper:
+    • I can improve a summarization system by not only using attention standardly, but allowing copying
+      attention – where you use additional attention calculations and an additional probabilistic gate to
+      simply copy a word from the input to the output
+
+
+• In 2019–2024, that approach is dead
+
+
+• Most work downloads a big pre-trained model and works from there
+• Action is in fine-tuning, or domain adaptation followed by fine-tuning, etc., etc.
+
+
+
+
+                                                                                                            20
+2026 NLP … recommended for all your practical projects
+pip install transformers
+# not quite runnable code but gives the general idea….
+from transformers import BertForSequenceClassification, AutoTokenizer
+model = BertForSequenceClassification.from_pretrained('bert-base-uncased’)
+model.train()
+tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased’)
+fine_tuner = Trainer( model=model, args=training_args, train_dataset=train_dataset,
+eval_dataset=test_dataset )
+fine_tuner.train()
+eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
+results = evaluate(model, tokenizer, eval_dataset, args)
+
+
+
+
+                                                                                      21
+Exciting areas 2026
+A lot of what is exciting now is problems that work within or around this world
+• Evaluating and improving models for something other than accuracy
+    • Robustness to domain shift
+    • Evaluating the robustness of models in general: https://robustnessgym.com
+• Doing empirical work looking at what large pre-trained models have learned
+• Working out how to get knowledge and good task performance from large models for particular
+  tasks without much data (transfer learning, etc.)
+• Looking at the bias, trustworthiness, and explainability of large models
+• Low resource languages or problems
+• Improving performance on the long tail situations
+• New topics in LLMs (e.g., agents, sycophancy, hallucination, factuality, reasoning)
+
+
+
+
+                                                                                                22
+Exciting areas 2026
+• Scaling models up and down
+   • Building big models is BIG: GPT-3+ … but just not possible for a course project – Be realistic
+     about the scale of compute you can do!
+   • Building small, performant models is also BIG. This could be a great project
+       • Model pruning, e.g.:
+         https://papers.nips.cc/paper/2020/file/eae15aabaa768ae4a5993a8a4f4fa6e4-Paper.pdf
+       • Model quantization, e.g.: https://arxiv.org/pdf/2004.07320.pdf
+       • How well can you do QA in 6GB or 500MB? https://efficientqa.github.io
+• Looking to achieve more advanced functionalities
+   • E.g., compositionality, systematic generalization, fast learning (e.g., meta-learning) on
+     smaller problems and amounts of data, and more quickly
+       • COGS: https://github.com/najoungkim/COGS
+       • gSCAN: https://arxiv.org/abs/2003.05161
+
+
+
+
+                                                                                                      23
+   Can I use train GPT-2 or use ChatGPT to do my final project?
+• You need to be very cognizant of how large a model you can train
+   • You just don’t have the resources to train your own GPT-2 model
+   • You probably don’t have the resources to even load T5 11B
+
+• You are welcome to use GPT-3 or ChatGPT in your final project
+   • Though we can’t fund your API use bills
+• There are almost certainly interesting projects that you can do using them
+   • Analysis projects
+   • Learning good prompts
+   • Chain of thought reasoning
+• But be careful to remember that you will be evaluated based on what you have done –
+  and not on the amazing ChatGPT output that you show us (“look, it works zero shot”)
+                                                                                  24
+   Finding data
+• Some people collect their own data for a project – we like that, but it’s trick to do fast!
+   • You may have a project that uses “unsupervised” data
+   • You can annotate a small amount of data
+   • You can find a website that effectively provides annotations, such as likes, stars,
+     ratings, responses, etc.
+      • This let’s you learn about real word challenges of applying ML/NLP!
+   • But be careful on scoping things so that this doesn’t take most of your time!!!
+
+• Some people have existing data from a research project or company
+   • Fine to use providing you can provide data samples for submission, report, etc.
+
+• Most people make use of an existing, curated dataset built by previous researchers
+  • You get a fast start and there is obvious prior work and baselines
+                                                                                         25
+Huggingface
+Datasets
+• https://huggingface.co/datasets
+
+
+
+
+                                    26
+Machine translation
+• http://statmt.org
+• Look in particular at the various WMT shared tasks
+• You can also look for recent WMTs that are not presented above website
+
+
+
+
+                                                                           27
+Many, many more
+• There are now many other datasets available online for all sorts of
+  purposes
+   • Look at Kaggle
+   • Look at research papers to see what data they use
+   • Look at lists of datasets
+      • https://machinelearningmastery.com/datasets-natural-language-processing/
+      • https://github.com/niderhoff/nlp-datasets
+   • Lots of particular things:
+      • https://gluebenchmark.com/tasks
+      • https://nlp.stanford.edu/sentiment/
+      • https://research.fb.com/downloads/babi/ (Facebook bAbI-related)
+
+
+
+
+                                                                                   28
+Pots of data
+
+
+• Many publicly available datasets are released with a train/dev/test structure.
+• We're all on the honor system to do test-set runs only when development is
+  complete.
+• Splits like this presuppose a fairly large dataset.
+• If there is no dev set or you want a separate tune set, then you create one by
+  splitting the training data
+   • We have to weigh the usefulness of it being a certain size against the reduction in train-set size.
+   • Cross-validation (c.v.) is a technique for maximizing data when you don’t have much
+• Having a fixed test set ensures that all systems are assessed against the same gold
+  data. This is generally good, but it is problematic where the test set turns out to
+  have unusual properties that distort progress on the task.
+
+                                                                                                    29
+Training models and pots of data
+• When training, models overfit to what you are training on
+   • The model correctly describes what happened to occur in particular data you trained on, but
+     the patterns are not general enough patterns to be likely to apply to new data
+• The way to monitor and avoid problematic overfitting is using independent
+  validation and test sets …
+
+
+
+
+                                                                                               30
+Training models and pots of data
+• You build (estimate/train) a model on a training set.
+• Often, you then set further hyperparameters on another, independent set of data,
+  the tuning set
+   • The tuning set is the training set for the hyperparameters!
+• You measure progress as you go on a dev set (development test set or validation
+  set)
+   • If you do that a lot you overfit to the dev set so it can be good to have a second dev set, the
+     dev2 set
+• Only at the end, you evaluate and present final numbers on a test set
+   • Use the final test set extremely few times … ideally only once
+
+
+
+
+                                                                                                       31
+Training models and pots of data
+• The train, tune, dev, and test sets need to be completely distinct
+• It is invalid to test on material you have trained on
+    • You will get a falsely good performance.
+    • We almost always overfit on train
+• You need an independent tuning set
+    • The hyperparameters won’t be set right if tune is same as train
+• If you keep running on the same evaluation set, you begin to overfit to that evaluation set
+    • Effectively you are “training” on the evaluation set … you are learning things that do and don’t work on
+      that particular eval set and using the info
+• To get a valid measure of system performance you need another untrained on, independent test
+  set … hence dev2 and final test
+
+
+
+
+                                                                                                             32
+Getting your neural network to train
+• Start with a positive attitude!
+   • Neural networks want to learn!
+   • If the network isn’t learning, you’re doing something to prevent it from learning successfully
+
+• Realize the grim reality:
+   • There are lots of things that can cause neural nets to not learn at all or to not learn very
+     well
+   • Finding and fixing them (“debugging and tuning”) can often take more time than
+     implementing your model
+
+• It’s hard to work out what these things are
+   • But experience, experimental care, and rules of thumb help!
+
+
+
+
+                                                                                                      33
+Models are sensitive to learning rates
+
+
+
+
+                                         34
+Models are sensitive to initialization
+
+
+
+
+                                         35
+Experimental strategy
+• Work incrementally!
+• Start with a very simple model and get it to work!
+   • It’s hard to fix a complex but broken model
+• Add bells and whistles one-by-one and get the model working with each of them
+  (or abandon them)
+
+• Initially run on a tiny amount of data
+   • You will see bugs much more easily on a tiny dataset
+   • Something like 4–8 examples is good
+   • Often synthetic data is useful for this
+   • Make sure you can get 100% on this data
+       • Otherwise your model is definitely either not powerful enough or it is broken
+
+
+
+
+                                                                                         36
+Experimental strategy
+• Train and run your model on a large dataset
+   • It should still score close to 100% on the training data after optimization
+   • Otherwise, you probably want to consider a more powerful model!
+   • Overfitting to training data is not something to be scared of when doing deep learning
+   • These models are usually good at generalizing because of the way distributed
+     representations share statistical strength regardless of overfitting to training data
+
+
+• But, still, you now want good generalization performance:
+   • Regularize your model until it doesn’t overfit on dev data
+   • Strategies like L2 regularization can be useful
+   • But normally generous dropout is the secret to success
+
+
+
+
+                                                                                              37
+Details matter!
+• Look at your data, collect summary statistics
+• Look at your model’s outputs, do error analysis
+• Tuning hyperparameters is often important to the successes of NNs
+
+
+
+
+                                                                      38
+Continued from last week…
+
+
+
+
+                            39
+  Machine Translation
+
+Machine Translation (MT) is the task of translating a sentence x from one language (the
+source language) to a sentence y in another language (the target language).
+
+
+
+                x:     L'homme est né libre, et partout il est dans les fers
+
+
+
+
+                 y:      Man is born free, but everywhere he is in chains
+                                                                               – Rousseau
+                                                                                        40
+   NMT: the first big success story of NLP Deep Learning
+Neural Machine Translation went from a fringe research attempt in 2014 to the leading
+standard method in 2016
+
+• 2014: First seq2seq paper published [Sutskever et al. 2014]
+
+• 2016: Google Translate switches from SMT to NMT – and by 2018 everyone has
+
+
+
+
+• This is amazing!
+   • SMT systems, built by hundreds of engineers over many years, outperformed by
+     NMT systems trained by small groups of engineers in a few months
+                                                                                    41
+Neural Machine Translation (NMT)
+    The sequence-to-sequence model
+
+
+
+
+         il   a     m’   entarté
+
+
+
+      Source sentence (input)
+
+
+
+
+                                     42
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+   Encoder RNN
+
+
+
+
+                      il   a     m’   entarté
+
+
+
+                   Source sentence (input)
+
+
+
+
+                                                  43
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+   Encoder RNN
+
+
+
+
+                      il   a     m’   entarté
+
+
+
+                   Source sentence (input)
+
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.           44
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                           for Decoder RNN.
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté
+
+
+
+                   Source sentence (input)
+
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                45
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                           for Decoder RNN.
+
+
+
+
+                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté
+
+
+
+                   Source sentence (input)
+
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                              46
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                           for Decoder RNN.
+
+
+
+
+                                                                                                 Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté
+
+
+
+                   Source sentence (input)             Decoder RNN is a Language Model that generates
+                                                          target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                        47
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                           for Decoder RNN.
+
+
+
+
+                                                                                                    Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START>
+
+
+                   Source sentence (input)                Decoder RNN is a Language Model that generates
+                                                             target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                           48
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                           for Decoder RNN.
+
+
+
+
+                                                                                                    Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START>
+
+
+                   Source sentence (input)                Decoder RNN is a Language Model that generates
+                                                             target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                           49
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he
+                           for Decoder RNN.
+
+
+
+
+                                                        argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              50
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he
+                           for Decoder RNN.
+
+
+
+
+                                                        argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              51
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit
+                           for Decoder RNN.
+
+
+
+
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              52
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit
+                           for Decoder RNN.
+
+
+
+
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he          hit
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              53
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit
+                           for Decoder RNN.
+
+
+
+
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he          hit
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              54
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit      me
+                           for Decoder RNN.
+
+
+
+
+                                                                           argmax
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                       Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he              hit
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                              55
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                                                                          Target sentence (output)
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit        me       with            a      pie   <END>
+                           for Decoder RNN.
+
+
+
+
+                                                                             argmax
+
+
+                                                                                       argmax
+
+
+                                                                                                argmax
+
+
+                                                                                                             argmax
+
+
+                                                                                                                      argmax
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                                               Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he                hit   me       with             a      pie
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                      an encoding of the
+                       source sentence.                                                                                                      56
+Neural Machine Translation (NMT)
+                 The sequence-to-sequence model
+                                                                          Target sentence (output)
+                    Encoding of the source sentence.
+                      Provides initial hidden state
+                                                            he       hit        me       with            a      pie   <END>
+                           for Decoder RNN.
+
+
+
+
+                                                                             argmax
+
+
+                                                                                       argmax
+
+
+                                                                                                argmax
+
+
+                                                                                                             argmax
+
+
+                                                                                                                      argmax
+                                                        argmax
+
+
+                                                                 argmax
+
+
+
+
+                                                                                                                               Decoder RNN
+   Encoder RNN
+
+
+
+
+                      il     a      m’    entarté      <START> he                hit   me       with             a      pie
+
+
+                   Source sentence (input)                   Decoder RNN is a Language Model that generates
+                                                                target sentence, conditioned on encoding.
+                    Encoder RNN produces
+                                                                 Note: This diagram shows test time behavior: decoder
+                      an encoding of the                                output is fed in     as next step’s input
+                       source sentence.                                                                                                      57
+   Sequence-to-sequence is versatile!
+• The general notion here is an encoder-decoder model
+   • One neural network takes input and produces a neural representation
+   • Another network produces output based on that neural representation
+   • If the input and output are sequences, we call it a seq2seq model
+
+• Sequence-to-sequence is useful for more than just MT
+• Many NLP tasks can be phrased as sequence-to-sequence:
+   • Summarization (long text → short text)
+   • Dialogue (previous utterances → next utterance)
+   • Parsing (input text → output parse as sequence)
+   • Code generation (natural language → Python code)
+
+                                                                           58
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+
+
+
+
+                                                                            59
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+   • Language Model because the decoder is predicting the
+     next word of the target sentence y
+
+
+
+
+                                                                            60
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+   • Language Model because the decoder is predicting the
+     next word of the target sentence y
+   • Conditional because its predictions are also conditioned on the source sentence x
+
+
+
+
+                                                                                         61
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+   • Language Model because the decoder is predicting the
+     next word of the target sentence y
+   • Conditional because its predictions are also conditioned on the source sentence x
+
+• NMT directly calculates            :
+
+
+                                       Probability of next target word, given
+                                   target words so far and source sentence x
+
+
+
+                                                                                         62
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+   • Language Model because the decoder is predicting the
+     next word of the target sentence y
+   • Conditional because its predictions are also conditioned on the source sentence x
+
+• NMT directly calculates            :
+
+
+                                       Probability of next target word, given
+                                   target words so far and source sentence x
+• Question: How to train a NMT system?
+
+                                                                                         63
+Neural Machine Translation (NMT)
+
+
+• The sequence-to-sequence model is an example of a Conditional Language Model
+   • Language Model because the decoder is predicting the
+     next word of the target sentence y
+   • Conditional because its predictions are also conditioned on the source sentence x
+
+• NMT directly calculates            :
+
+
+                                       Probability of next target word, given
+                                   target words so far and source sentence x
+• Question: How to train a NMT system?
+• (Easy) Answer: Get a big parallel corpus…
+   • But there is now exciting work on “unsupervised NMT”, data augmentation, etc.       64
+Training a Neural Machine Translation system
+
+
+
+
+         il    a     m’   entarté    <START>   he   hit   me    with       a   pie
+
+
+     Source sentence (from corpus)         Target sentence (from corpus)
+
+                                                                                     65
+Training a Neural Machine Translation system
+  Encoder RNN
+
+
+
+
+                    il    a     m’   entarté    <START>   he   hit   me    with       a   pie
+
+
+                Source sentence (from corpus)         Target sentence (from corpus)
+
+                                                                                                66
+Training a Neural Machine Translation system
+
+
+
+                                                   𝑦1Ƹ      𝑦2Ƹ    𝑦3Ƹ   𝑦4Ƹ    𝑦5Ƹ      𝑦6Ƹ   𝑦7Ƹ
+
+
+
+
+                                                                                                     Decoder RNN
+  Encoder RNN
+
+
+
+
+                    il    a     m’   entarté    <START>    he     hit    me    with      a     pie
+
+
+                Source sentence (from corpus)            Target sentence (from corpus)
+
+                                                                                                                   67
+Training a Neural Machine Translation system
+
+                                                   𝐽1       𝐽2     𝐽3    𝐽4     𝐽5    𝐽6       𝐽7
+
+
+
+                                                   𝑦1Ƹ      𝑦2Ƹ    𝑦3Ƹ   𝑦4Ƹ    𝑦5Ƹ      𝑦6Ƹ   𝑦7Ƹ
+
+
+
+
+                                                                                                     Decoder RNN
+  Encoder RNN
+
+
+
+
+                    il    a     m’   entarté    <START>    he     hit    me    with      a     pie
+
+
+                Source sentence (from corpus)            Target sentence (from corpus)
+
+                                                                                                                   68
+Training a Neural Machine Translation system
+                                                = negative log                = negative log          = negative log
+                                                 prob of “he”                 prob of “with”          prob of <END>
+                                                      𝐽1         𝐽2     𝐽3         𝐽4          𝐽5    𝐽6     𝐽7
+
+
+
+                                                      𝑦1Ƹ        𝑦2Ƹ    𝑦3Ƹ        𝑦4Ƹ         𝑦5Ƹ   𝑦6Ƹ    𝑦7Ƹ
+
+
+
+
+                                                                                                                       Decoder RNN
+  Encoder RNN
+
+
+
+
+                    il    a     m’   entarté     <START>         he    hit        me      with       a     pie
+
+
+                Source sentence (from corpus)               Target sentence (from corpus)
+
+                                                                                                                                     69
+Training a Neural Machine Translation system
+                                                    = negative log                = negative log          = negative log
+                                     𝑇               prob of “he”                 prob of “with”          prob of <END>
+                                  1
+                               𝐽 = ෍ 𝐽𝑡         =         𝐽1 + 𝐽2 + 𝐽3 + 𝐽4 + 𝐽5 + 𝐽6 + 𝐽7
+                                  𝑇
+                                     𝑡=1
+
+
+
+                                                          𝑦1Ƹ        𝑦2Ƹ    𝑦3Ƹ        𝑦4Ƹ         𝑦5Ƹ   𝑦6Ƹ    𝑦7Ƹ
+
+
+
+
+                                                                                                                           Decoder RNN
+  Encoder RNN
+
+
+
+
+                    il    a     m’   entarté         <START>         he    hit        me      with       a     pie
+
+
+                Source sentence (from corpus)                   Target sentence (from corpus)
+
+                                                                                                                                         70
+Training a Neural Machine Translation system
+                                                      = negative log                = negative log          = negative log
+                                       𝑇               prob of “he”                 prob of “with”          prob of <END>
+                                    1
+                                 𝐽 = ෍ 𝐽𝑡         =         𝐽1 + 𝐽2 + 𝐽3 + 𝐽4 + 𝐽5 + 𝐽6 + 𝐽7
+                                    𝑇
+                                       𝑡=1
+
+
+
+                                                            𝑦1Ƹ        𝑦2Ƹ    𝑦3Ƹ        𝑦4Ƹ         𝑦5Ƹ   𝑦6Ƹ    𝑦7Ƹ
+
+
+
+
+                                                                                                                             Decoder RNN
+  Encoder RNN
+
+
+
+
+                      il    a     m’   entarté         <START>         he    hit        me      with       a     pie
+
+
+                  Source sentence (from corpus)                   Target sentence (from corpus)
+
+                Seq2seq is optimized as a single system. Backpropagation operates “end-to-end”.                                            71
+Training a Neural Machine Translation system
+                                                      = negative log                = negative log          = negative log
+                                       𝑇               prob of “he”                 prob of “with”          prob of <END>
+                                    1
+                                 𝐽 = ෍ 𝐽𝑡         =         𝐽1 + 𝐽2 + 𝐽3 + 𝐽4 + 𝐽5 + 𝐽6 + 𝐽7
+                                    𝑇
+                                       𝑡=1
+
+
+
+                                                            𝑦1Ƹ        𝑦2Ƹ    𝑦3Ƹ        𝑦4Ƹ         𝑦5Ƹ   𝑦6Ƹ    𝑦7Ƹ
+
+
+
+
+                                                                                                                             Decoder RNN
+  Encoder RNN
+
+
+
+
+                      il    a     m’   entarté         <START>         he    hit        me      with       a     pie
+
+
+                  Source sentence (from corpus)                   Target sentence (from corpus)
+
+                Seq2seq is optimized as a single system. Backpropagation operates “end-to-end”.                                            72
+ Multi-layer deep encoder-decoder machine translation net
+[Sutskever et al. 2014; Luong et al. 2015]
+                                                                     The hidden states from RNN layer i
+                                                                     are the inputs to RNN layer i+1
+
+                                                                                                                                       Translation
+                                                                     The     protests escalated   over     the     weekend <EOS>       generated
+                      0.1       0.2     0.4    0.5     0.2    -0.1     0.2       0.2       0.3       0.4    -0.2      -0.4      -0.3
+                      0.3       0.6     0.4    0.5     0.6     0.6     0.6       0.6       0.6       0.4     0.6       0.6       0.5
+                      0.1      -0.1     0.3    0.9    -0.1    -0.1    -0.1      -0.1      -0.1      -0.1    -0.1      -0.1      -0.1
+                     -0.4      -0.7    -0.2   -0.3    -0.5    -0.7    -0.7      -0.7      -0.7      -0.7    -0.7      -0.7      -0.7
+                      0.2       0.1    -0.3   -0.2     0.1     0.1     0.1       0.1       0.1       0.1     0.1       0.1       0.1
+
+
+
+     Encoder:
+     Builds up        0.2       0.2     0.1
+                                        0.3
+                                               0.2
+                                               0.6
+                                                       0.2
+                                                      -0.8
+                                                               0.2
+                                                               0.6
+                                                                       0.2
+                                                                      -0.1
+                                                                                -0.4
+                                                                                 0.6
+                                                                                           0.2
+                                                                                           0.6
+                                                                                                    -0.1
+                                                                                                     0.6
+                                                                                                             0.2
+                                                                                                             0.4
+                                                                                                                       0.3
+                                                                                                                       0.6
+                                                                                                                                 0.2
+                                                                                                                                 0.6
+                                                                                                                                          Decoder
+                     -0.2       0.6
+                     -0.1      -0.1    -0.1   -0.1    -0.1    -0.1    -0.1      -0.1      -0.1      -0.1    -0.1      -0.1      -0.1
+
+     sentence         0.1
+                      0.1
+                               -0.7
+                                0.1
+                                       -0.7
+                                        0.1
+                                              -0.4
+                                               0.1
+                                                      -0.5
+                                                       0.1
+                                                              -0.7
+                                                               0.1
+                                                                      -0.7
+                                                                       0.1
+                                                                                -0.7
+                                                                                 0.1
+                                                                                           0.3
+                                                                                           0.1
+                                                                                                     0.3
+                                                                                                     0.1
+                                                                                                             0.2
+                                                                                                             0.1
+                                                                                                                      -0.5
+                                                                                                                       0.1
+                                                                                                                                -0.7
+                                                                                                                                 0.1
+
+
+     meaning
+                      0.2       0.4    0.2     0.2     0.4     0.2     0.2       0.2       0.2     -0.1     -0.2      -0.4       0.2
+                      0.6      -0.6   -0.3     0.4    -0.2     0.6     0.6       0.6       0.6      0.3      0.6       0.5       0.6
+                     -0.1       0.2   -0.1     0.1    -0.3    -0.1    -0.1      -0.1      -0.1     -0.1      0.1      -0.5      -0.1
+                     -0.7      -0.3   -0.4    -0.5    -0.4    -0.7    -0.7      -0.7      -0.7     -0.7      0.3       0.4      -0.7
+                      0.1       0.4    0.2    -0.2    -0.2     0.1     0.1       0.1       0.1      0.1      0.1       0.1       0.1
+
+
+
+
+      Source        Die     Proteste waren am Wochenende eskaliert <EOS>     The       protests escalated over       the     weekend     Feeding in
+     sentence                                                                                                                            last word
+
+
+
+
+                                                                                                                                                 73
+The final piece: the bottleneck problem in RNNs
+                   Encoding of the
+                  source sentence.
+                                                               Target sentence (output)
+
+
+                                                 he      hit      me    with    a     pie <END>
+    Encoder RNN
+
+
+
+
+                                                                                                  Decoder RNN
+                   il    a     m’    entarté   <START>   he       hit   me     with   a   pie
+
+
+                    Source sentence (input)
+
+                                                          Problems with this architecture?
+                                                                                                                74
+Attention
+
+
+• Attention provides a solution to the bottleneck problem.
+
+• Core idea: on each step of the decoder, use direct connection to the encoder to focus
+  on a particular part of the source sequence
+
+
+
+
+• First, we will show via diagram (no equations), then we will show with equations
+
+                                                                                     75
+   The starting point: mean-pooling for RNNs
+
+                                            positive             How to compute
+                                                               sentence encoding?
+
+                                                                 Usually better:
+                                Sentence                       Take element-wise
+                                encoding                       max or mean of all
+                                                                  hidden states
+
+
+
+
+                  overall   I     enjoyed     the      movie       a       lot
+
+
+• Starting point: a very basic way of ‘passing information from the encoder’ is to average
+                                                                                      76
+     Attention is weighted averaging, which lets you do lookups!
+  Attention is just a weighted average – this is very powerful if the weights are learned!
+In attention, the query matches all keys softly,      In a lookup table, we have a table of keys
+to a weight between 0 and 1. The keys’ values         that map to values. The query matches
+are multiplied by the weights and summed.             one of the keys, returning its value.
+
+
+
+
+                                                                                             77
+    Sequence-to-sequence with attention
+Core idea: on each step of the decoder, use direct connection to the encoder to focus on a
+particular part of the source sequence
+                              dot product
+         Attention
+          scores
+
+
+
+
+                                                                                  Decoder RNN
+         Encoder
+          RNN
+
+
+
+
+                     il   a      m’   entarté   <START>
+
+
+                     Source sentence (input)                                                    78
+Sequence-to-sequence with attention
+
+                       dot product
+  Attention
+   scores
+
+
+
+
+                                                   Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+              il   a      m’   entarté   <START>
+
+
+              Source sentence (input)                            79
+Sequence-to-sequence with attention
+
+                       dot product
+  Attention
+   scores
+
+
+
+
+                                                   Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+              il   a      m’   entarté   <START>
+
+
+              Source sentence (input)                            80
+Sequence-to-sequence with attention
+
+                       dot product
+  Attention
+   scores
+
+
+
+
+                                                   Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+              il   a      m’   entarté   <START>
+
+
+              Source sentence (input)                            81
+Sequence-to-sequence with attention
+                                     On this decoder timestep, we’re
+   scores distribution               mostly focusing on the first
+                                     encoder hidden state (”he”)
+  Attention Attention
+
+
+
+
+                                                          Take softmax to turn the scores
+                                                           into a probability distribution
+
+
+
+
+                                                                                             Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’   entarté     <START>
+
+
+                         Source sentence (input)                                                           82
+Sequence-to-sequence with attention
+                                         Attention             Use the attention distribution to take a
+                                          output               weighted sum of the encoder hidden
+   scores distribution                                         states.
+  Attention Attention
+
+
+
+                                                               The attention output mostly contains in
+                                                               formation from the hidden states that
+                                                               received high attention.
+
+
+
+
+                                                                                                          Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START>
+
+
+                         Source sentence (input)                                                                        83
+Sequence-to-sequence with attention
+                                         Attention     he
+                                          output
+                                                               Concatenate attention output
+   scores distribution
+                                                       𝑦ො1     with decoder hidden state, then
+  Attention Attention
+
+                                                               use to compute 𝑦ො1 as before
+
+
+
+
+                                                                                                 Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START>
+
+
+                         Source sentence (input)                                                               84
+Sequence-to-sequence with attention
+                                         Attention          hit
+                                          output
+   scores distribution
+                                                             𝑦ො2
+  Attention Attention
+
+
+
+
+                                                                                               Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                                                                   Sometimes we take the
+                                                                   attention output from the
+                                                                   previous step, and also
+                                                                   feed it into the decoder
+                         il   a     m’     entarté   <START> he    (along with the usual
+                                                                   decoder input).
+
+                         Source sentence (input)                                                             85
+Sequence-to-sequence with attention
+                                         Attention                me
+                                          output
+   scores distribution
+                                                                  𝑦ො3
+  Attention Attention
+
+
+
+
+                                                                        Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START> he   hit
+
+
+                         Source sentence (input)                                      86
+Sequence-to-sequence with attention
+                                         Attention                      with
+                                          output
+   scores distribution
+                                                                        𝑦ො4
+  Attention Attention
+
+
+
+
+                                                                               Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START> he   hit   me
+
+
+                         Source sentence (input)                                             87
+Sequence-to-sequence with attention
+                                         Attention                            a
+                                          output
+   scores distribution
+                                                                             𝑦ො5
+  Attention Attention
+
+
+
+
+                                                                                    Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START> he   hit   me   with
+
+
+                         Source sentence (input)                                                  88
+Sequence-to-sequence with attention
+                                         Attention                                  pie
+                                          output
+   scores distribution
+                                                                                    𝑦ො6
+  Attention Attention
+
+
+
+
+                                                                                          Decoder RNN
+  Encoder
+   RNN
+
+
+
+
+                         il   a     m’     entarté   <START> he   hit   me   with    a
+
+
+                         Source sentence (input)                                                        89
+Attention is great
+• Attention significantly improves NMT performance
+
+
+
+
+                                                     90
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+
+
+
+
+                                                                                 91
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+
+
+
+
+                                                                                 92
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+
+
+
+
+                                                                                 93
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+
+
+
+
+                                                                                 94
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+   • Provides shortcut to faraway states
+
+
+
+
+                                                                                 95
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+   • Provides shortcut to faraway states
+• Attention provides some interpretability
+
+
+
+
+                                                                                 96
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+   • Provides shortcut to faraway states
+• Attention provides some interpretability
+   • By inspecting attention distribution, we can see
+
+
+
+
+                                                                                                      with
+                                                                                                 me
+
+
+
+
+                                                                                                                 pie
+                                                                                      he
+                                                                                           hit
+
+
+
+
+                                                                                                             a
+     what the decoder was focusing on                                            il
+                                                                                 a
+
+                                                                              m’
+
+                                                                          entarté
+
+
+
+
+                                                                                                                       97
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+   • Provides shortcut to faraway states
+• Attention provides some interpretability
+   • By inspecting attention distribution, we can see
+
+
+
+
+                                                                                                      with
+                                                                                                 me
+
+
+
+
+                                                                                                                 pie
+                                                                                      he
+                                                                                           hit
+
+
+
+
+                                                                                                             a
+     what the decoder was focusing on                                            il
+   • We get (soft) alignment for free!                                           a
+
+                                                                              m’
+
+                                                                          entarté
+
+
+
+
+                                                                                                                       98
+Attention is great
+• Attention significantly improves NMT performance
+   • It’s very useful to allow decoder to focus on certain parts of the source
+• Attention solves the bottleneck problem
+   • Attention allows decoder to look directly at source; bypass bottleneck
+• Attention helps with vanishing gradient problem
+   • Provides shortcut to faraway states
+• Attention provides some interpretability
+   • By inspecting attention distribution, we can see
+
+
+
+
+                                                                                                      with
+                                                                                                 me
+
+
+
+
+                                                                                                                 pie
+                                                                                      he
+                                                                                           hit
+
+
+
+
+                                                                                                             a
+     what the decoder was focusing on                                            il
+   • We get (soft) alignment for free!                                           a
+
+   • This is cool because we never explicitly trained                         m’
+
+     an alignment system                                                  entarté
+
+
+
+
+                                                                                                                       99
+  Attention is great
+  • Attention significantly improves NMT performance
+      • It’s very useful to allow decoder to focus on certain parts of the source
+  • Attention solves the bottleneck problem
+      • Attention allows decoder to look directly at source; bypass bottleneck
+  • Attention helps with vanishing gradient problem
+      • Provides shortcut to faraway states
+  • Attention provides some interpretability
+     • By inspecting attention distribution, we can see
+
+
+
+
+                                                                                                     with
+                                                                                                me
+
+
+
+
+                                                                                                                pie
+                                                                                     he
+                                                                                          hit
+
+
+
+
+                                                                                                            a
+       what the decoder was focusing on                                         il
+     • We get (soft) alignment for free!                                        a
+
+     • This is cool because we never explicitly trained                       m’
+
+       an alignment system                                                entarté
+
+     • The network just learned alignment by itself
+• (One issue – attention has quadratic cost with respect to sequence length)
+                                                                                                                      100
+  Attention is a general Deep Learning technique
+• We’ve seen that attention is a great way to improve the sequence-to-sequence model
+  for Machine Translation.
+
+
+
+
+                                                                               101
+  Attention is a general Deep Learning technique
+• We’ve seen that attention is a great way to improve the sequence-to-sequence model
+  for Machine Translation.
+• However: You can use attention in many architectures
+  (not just seq2seq) and many tasks (not just MT)
+
+
+
+
+                                                                               102
+  Attention is a general Deep Learning technique
+• We’ve seen that attention is a great way to improve the sequence-to-sequence model
+  for Machine Translation.
+• However: You can use attention in many architectures
+  (not just seq2seq) and many tasks (not just MT)
+
+• More general definition of attention:
+  • Given a set of vector values, and a vector query, attention is a technique to compute
+    a weighted sum of the values, dependent on the query.
+
+
+
+
+                                                                                   103
+  Attention is a general Deep Learning technique
+• We’ve seen that attention is a great way to improve the sequence-to-sequence model
+  for Machine Translation.
+• However: You can use attention in many architectures
+  (not just seq2seq) and many tasks (not just MT)
+
+• More general definition of attention:
+  • Given a set of vector values, and a vector query, attention is a technique to compute
+    a weighted sum of the values, dependent on the query.
+
+• We sometimes say that the query attends to the values.
+
+
+                                                                                   104
+  Attention is a general Deep Learning technique
+• We’ve seen that attention is a great way to improve the sequence-to-sequence model
+  for Machine Translation.
+• However: You can use attention in many architectures
+  (not just seq2seq) and many tasks (not just MT)
+
+• More general definition of attention:
+  • Given a set of vector values, and a vector query, attention is a technique to compute
+    a weighted sum of the values, dependent on the query.
+
+• We sometimes say that the query attends to the values.
+• For example, in the seq2seq + attention model, each decoder hidden state (query)
+  attends to all the encoder hidden states (values).
+                                                                                   105
+Transformers
+
+
+
+
+               106
+   Do we even need recurrence at all?
+• Abstractly: Attention is a way to pass information from a sequence (𝑥) to a neural
+  network input. (ℎ𝑡 )
+   • This is also exactly what RNNs are used for – to pass information!
+   • Can we just get rid of the RNN entirely? Maybe attention is just a better way to pass
+     information!
+
+
+
+                                       Lots of trial
+                                        and error
+
+               2014-2017ish                                        2021
+                Recurrence                                        ??????
+
+                                                                                     107
+   The building block we need: self attention
+• What we talked about – Cross attention: paying attention to the input x to generate 𝑦𝑡
+
+
+
+
+• What we need – Self attention: to generate 𝑦𝑡 , we need to pay attention to 𝑦<𝑡
+
+                                                                                    108
+Self-Attention Hypothetical Example
+
+
+
+
+       I   went   to   Korea University COSE461   and   learned
+
+                                                                  109
+Self-Attention: keys, queries, values from the same sequence
+Let 𝒘1:𝑛 be a sequence of words in vocabulary 𝑉, like Zuko made his uncle tea.
+
+For each 𝒘𝑖 , let 𝒙𝑖 = 𝐸𝒘𝑖 , where 𝐸 ∈ ℝ𝑑× 𝑉 is an embedding matrix.
+
+1. Transform each word embedding with weight matrices 𝑄, 𝐾, 𝑉, each in ℝ𝑑×𝑑
+              𝒒𝑖 = 𝑄𝒙𝑖 (queries)        𝒌𝑖 = 𝐾𝒙𝑖 (keys)             𝒗𝑖 = 𝑉𝒙𝑖 (values)
+
+2. Compute pairwise similarities between keys and queries; normalize with softmax
+
+                                                               exp(𝒆𝑖𝑗 )
+                   𝒆𝑖𝑗 = 𝒒⊤
+                          𝑖 𝒌𝑗                    𝜶𝑖𝑗 =
+                                                          σ ′ exp 𝒆𝑖𝑗′
+                                                           𝑗
+
+
+3. Compute output for each word as weighted sum of values
+
+
+                                      𝒐𝑖 = ෍ 𝜶𝑖𝑗 𝒗𝑖
+                                                                                        110
+                                            𝑗
+  Self-attention as an NLP building block
+• In the diagram at the right, we
+  have stacked self-attention
+  blocks, like we might stack LSTM                       self-attention
+  layers.                            𝑘1 𝑞1 𝑣1 𝑘2 𝑞2 𝑣2        𝑘3 𝑞3 𝑣3           𝑘 𝑇 𝑞𝑇 𝑣 𝑇
+
+• Can self-attention be a drop-in
+                                                                            …
+  replacement for recurrence?                            self-attention
+                                     𝑘1 𝑞1 𝑣1 𝑘2 𝑞2 𝑣2        𝑘3 𝑞3 𝑣3           𝑘 𝑇 𝑞𝑇 𝑣 𝑇
+• No. It has a few issues, which
+  we’ll go through.                                                         …
+                                       𝑤1           𝑤2            𝑤3                 𝑤𝑇
+• First, self-attention is an          The          chef         who                food
+  operation on sets. It has no
+  inherent notion of order.
+                                      Self-attention doesn’t know the order of its inputs.
+Barriers and solutions for Self-Attention as a building block
+
+            Barriers                          Solutions
+ • Doesn’t have an inherent
+   notion of order!
+
+
+
+
+                                                                112
+  Fixing the first self-attention problem: sequence order
+• Since self-attention doesn’t build in order information, we need to encode the order of the
+  sentence in our keys, queries, and values.
+• Consider representing each sequence index as a vector
+                       𝑝𝑖 ∈ ℝ𝑑 , for 𝑖 ∈ {1,2, … , 𝑇} are position vectors
+
+• Don’t worry about what the 𝑝𝑖 are made of yet!
+• Easy to incorporate this info into our self-attention block: just add the 𝑝𝑖 to our inputs!
+• Recall 𝑥𝑖 is the embedding of the word at index 𝑖 . The positioned embedding is:
+                                                                   In deep self-attention
+                                   𝑥෤𝑖 = 𝑥𝑖 + 𝑝𝑖                   networks, we do this at the
+                                                                   first layer! You could
+                                                                   concatenate them as well,
+                                                                   but people mostly just add…
+                                                                                            113
+ Position representation vectors through sinusoids
+• Sinusoidal position representations: concatenate sinusoidal functions of varying periods:
+
+            sin(𝑖/100002∗1/𝑑)
+            cos(𝑖/100002∗1/𝑑)
+
+
+
+
+                                          Dimension
+   𝑝𝑖 =
+                            𝑑
+                          2∗ 2 /𝑑
+            sin(𝑖/10000             )
+                            𝑑
+                          2∗ 2 /𝑑
+            cos(𝑖/10000             )                                   Index in the sequence
+• Pros:
+   • Periodicity indicates that maybe “absolute position” isn’t as important
+   • Maybe can extrapolate to longer sequences as periods restart!
+• Cons:
+   • Not learnable; also the extrapolation doesn’t really work!
+                                                                                                                    114
+                   Image: https://timodenk.com/blog/linear-relationships-in-the-transformers-positional-encoding/
+Position representation vectors learned from scratch
+
+
+• Learned absolute position representations: Let all 𝑝𝑖 be learnable parameters!
+  Learn a matrix 𝑝 ∈ ℝ 𝑑×𝑇 , and let each 𝑝𝑖 be a column of that matrix!
+
+• Pros:
+   • Flexibility: each position gets to be learned to fit the data
+• Cons:
+   • Definitely can’t extrapolate to indices outside 1, … , 𝑇.
+• Most systems use this!
+
+• Sometimes people try more flexible representations of position:
+   • Relative linear position attention [Shaw et al., 2018]
+   • Dependency syntax-based position [Wang et al., 2019]
+                                                                                   115
+Common, modern position embeddings - RoPE
+High level thought process: a relative position embedding should be some 𝑓(𝑥, 𝑖)
+s.t.
+
+                            𝑓 𝑥, 𝑖 , 𝑓 𝑦, 𝑗   = 𝑔(𝑥, 𝑦, 𝑖 − 𝑗)
+
+That is, the attention function only gets to depend on the relative position (i-j). How
+do existing embeddings not fulfill this goal?
+
+• Sine/absolute:
+
+Resultant attention function cannot be only dependant on the relative position (i-j)
+
+
+
+
+                                                                                      116
+RoPE – Embedding via rotation
+
+
+
+
+                                117
+     RoPE – From 2 to many dimensions
+
+
+
+
+                                                                                [Su et al 2021]
+
+
+
+     Just pair up the coordinates and rotate them in 2d (motivation: complex numbers)
+
+11
+Barriers and solutions for Self-Attention as a building block
+
+             Barriers                             Solutions
+ • Doesn’t have an inherent           • Add position representations to
+   notion of order!                     the inputs
+
+ • No nonlinearities for deep
+   learning! It’s all just weighted
+   averages
+
+
+
+
+                                                                          119
+  Adding nonlinearities in self-attention
+
+• Note that there are no elementwise
+  nonlinearities in self-attention;
+  stacking more self-attention layers         FF            FF           FF                  FF
+  just re-averages value vectors
+                                                                 self-attention
+
+• Easy fix: add a feed-forward network
+                                                                                   …
+  to post-process each output vector.         FF            FF           FF                  FF
+
+𝑚𝑖 = 𝑀𝐿𝑃 output𝑖                                                 self-attention
+   = 𝑊2 ∗ ReLU 𝑊1 × output𝑖 + 𝑏1 + 𝑏2                                              …
+                                              𝑤1           𝑤2            𝑤3                  𝑤𝑇
+                                              The          chef          who                food
+                                         Intuition: the FF network processes the result of attention
+Barriers and solutions for Self-Attention as a building block
+
+             Barriers                           Solutions
+ • Doesn’t have an inherent         • Add position representations to
+   notion of order!                   the inputs
+
+ • No nonlinearities for deep       • Easy fix: apply the same
+   learning magic! It’s all just      feedforward network to each
+   weighted averages                  self-attention output.
+
+ • Need to ensure we don’t
+   “look at the future” when
+   predicting a sequence
+    • Like in machine translation
+    • Or language modeling                                              121
+   Masking the future in self-attention                                      We can look at these
+                                                                             (not greyed out) words
+
+• To use self-attention in
+  decoders, we need to ensure
+  we can’t peek at the future.
+                                                              [START]   −∞
+                                                                        −∞       −∞
+                                                                                 −∞        −∞
+                                                                                           −∞           −∞
+• At every timestep, we could                                                                           −∞
+  change the set of keys and
+  queries to include only past                                  The
+                                                                The              −∞
+                                                                                 −∞        −∞           −∞
+                                                                                           −∞           −∞
+  words. (Inefficient!)                 For encoding
+                                        these words
+                                                                chef
+                                                                chef                       −∞
+                                                                                           −∞           −∞
+                                                                                                        −∞
+• To enable parallelization, we
+  mask out attention to future
+                                      Attention weights
+  words by setting attention       automatically becomes 0      who
+                                                                who                                     −∞
+                                                                                                        −∞
+  scores to −∞.        ⊤                       exp 𝑒𝑖𝑗
+                      𝑞 𝑘 ,𝑗 < 𝑖
+               𝑒𝑖𝑗 = ൝ 𝑖 𝑗           𝛼𝑖𝑗 =
+                      −∞, 𝑗 ≥ 𝑖              σ𝑗 ′ exp 𝑒𝑖𝑗 ′                                           122
+                                                                         [The matrix of 𝑒𝑖𝑗 values]
+Barriers and solutions for Self-Attention as a building block
+
+             Barriers                          • Solutions
+ • Doesn’t have an inherent         • Add position representations to
+   notion of order!                   the inputs
+
+ • No nonlinearities for deep       • Easy fix: apply the same
+   learning magic! It’s all just      feedforward network to each
+   weighted averages                  self-attention output.
+
+ • Need to ensure we don’t
+   “look at the future” when        • Mask out the future by artificially
+   predicting a sequence              setting attention weights to 0!
+    • Like in machine translation
+    • Or language modeling                                              123
+ Necessities for a self-attention building block:
+• Self-attention:
+   • the basis of the method.
+• Position representations:
+   • Specify the sequence order, since self-attention
+     is an unordered function of its inputs.
+• Nonlinearities:
+   • At the output of the self-attention block
+   • Frequently implemented as a simple feed-
+     forward network.
+• Masking:
+   • In order to parallelize operations while not
+     looking at the future.
+   • Keeps information about the future from
+                                                        124
+     “leaking” to the past.
+The Transformer Decoder
+• A Transformer decoder is how
+  we’ll build systems like
+  language models.
+• It’s a lot like our minimal self-
+  attention architecture, but
+  with a few more components.
+• The embeddings and position
+  embeddings are identical.
+• We’ll next replace our self-
+  attention with multi-head self-
+  attention.
+
+                                      Transformer Decoder
+
+                                                            125
+Recall the Self-Attention Hypothetical Example
+
+
+
+
+       I   went   to   Korea University COSE461   and   learned
+
+                                                                  126
+Hypothetical Example of Multi-Head Attention
+
+
+
+
+  I   went   to   Korea University COSE461   and   learned   I   went   to   Korea University COSE461   and   learned
+
+
+
+
+                                                                                                                        127
+Sequence-Stacked form of Attention
+
+  • Let’s look at how key-query-value attention is computed, in matrices.
+     • Let 𝑋 = 𝑥1; … ; 𝑥𝑇 ∈ ℝ𝑇×𝑑 be the concatenation of input vectors.
+     • First, note that 𝑋𝐾 ∈ ℝ 𝑇×𝑑 , 𝑋𝑄 ∈ ℝ 𝑇×𝑑 , 𝑋𝑉 ∈ ℝ 𝑇×𝑑 .
+     • The output is defined as output = softmax 𝑋𝑄 𝑋𝐾 ⊤ × 𝑋𝑉
+
+ First, take the query-key dot                                              All pairs of
+ products in one matrix               𝑋𝑄               = 𝑋𝑄𝐾 𝖳 𝑋 𝖳          attention scores!
+ multiplication: 𝑋𝑄 𝑋𝐾 ⊤                     𝐾𝖳 𝑋𝖳
+                                                                     ∈ ℝ 𝑇×𝑇
+
+  Next, softmax, and
+  compute the weighted
+  average with another
+                                 softmax   𝑋𝑄𝐾 𝖳 𝑋 𝖳   𝑋𝑉   =
+  matrix multiplication.                                              output ∈ ℝ𝑇×𝑑 128
+The Transformer Encoder: Multi-headed attention
+  • What if we want to look in multiple places in the sentence at once?
+    • For word 𝑖, self-attention “looks” where 𝑥 𝖳 𝑄 𝖳 𝐾𝑥 𝑗 is high, but maybe we want
+      to focus on different 𝑗 for different reasons?
+  • We’ll define multiple attention “heads” through multiple Q,K,V matrices
+                         𝑑
+                      𝑑×ℎ
+  • Let, 𝑄𝑙 , 𝐾𝑙 , 𝑉𝑙 ∈ ℝ , where ℎ is the number of attention heads, and 𝑙 ranges
+    from 1 to ℎ.
+  • Each attention head performs attention independently:
+     • output 𝑙 = softmax 𝑋𝑄𝑙 𝐾𝑙⊤ 𝑋 ⊤ 𝑋𝑉𝑙 , where output 𝑙 ∈ ℝ𝑑/ℎ
+  • Then the outputs of all the heads are combined!
+     • output = 𝑌[output1; … ; outputℎ], where 𝑌 ∈ ℝ 𝑑×𝑑
+
+  • Each head gets to “look” at different things, and construct value vectors differently.
+                                                                                      129
+Multi-head self-attention is computationally efficient
+ • Even though we compute ℎ many attention heads, it’s not really more costly.
+    • We compute 𝑋𝑄 ∈ ℝ𝑛×𝑑 , and then reshape to ℝ𝑛×ℎ×𝑑/ℎ . (Likewise for 𝑋𝐾, 𝑋𝑉.)
+    • Then we transpose to ℝℎ×𝑛×𝑑/ℎ ; now the head axis is like a batch axis.
+    • Almost everything else is identical, and the matrices are the same sizes.
+
+First, take the query-key dot                                                   3 sets of all pairs of
+                                                                ⊤ ⊤
+products in one matrix                𝑋𝑄               =    𝑋𝑄𝐾 𝑋               attention scores!
+multiplication: 𝑋𝑄 𝑋𝐾 ⊤                      𝐾 ⊤𝑋⊤                     ∈ ℝ3×𝑛×𝑛
+
+
+
+Next, softmax, and
+compute the weighted
+average with another
+                                softmax    𝑋𝑄𝐾 ⊤ 𝑋 ⊤   𝑋𝑉   =               =
+                                                                       𝑃                output ∈ ℝ𝑛×𝑑
+matrix multiplication.
+                                                                      mix                      130
+Scaled Dot Product [Vaswani et al., 2017]
+
+ • “Scaled Dot Product” attention aids in training.
+ • When dimensionality 𝑑 becomes large, dot products between vectors tend to
+   become large.
+    • Because of this, inputs to the softmax function can be large, making the
+      gradients small.
+ • Instead of the self-attention function we’ve seen:
+                       output 𝑙 = softmax 𝑋𝑄𝑙 𝐾𝑙⊤ 𝑋 ⊤ 𝑋𝑉𝑙
+ • We divide the attention scores by 𝑑/ℎ, to stop the scores from becoming large
+   just as a function of 𝑑/ℎ (The dimensionality divided by the number of heads.)
+                                            𝑋𝑄𝑙 𝐾𝑙⊤ 𝑋 ⊤
+                       output 𝑙 = softmax                 𝑋𝑉𝑙
+                                                𝑑/ℎ
+                                                                                    131
+The Transformer Decoder
+   • Now that we’ve replaced self-
+     attention with multi-head self-
+     attention, we’ll go through two
+     optimization tricks that end up
+     being :
+      • Residual Connections
+      • Layer Normalization
+   • In most Transformer diagrams,
+     these are often written
+     together as “Add & Norm”
+
+
+                                       Transformer Decoder
+
+                                                             132
+Residual connections [He et al., 2016]
+
+• Residual connections are a trick to help models train better.
+   • Instead of 𝑋(𝑖) = Layer(𝑋 𝑖−1 ) (where 𝑖 represents the layer)
+
+         𝑋(𝑖−1)        Layer           𝑋(𝑖)
+
+   • We let 𝑋(𝑖) = 𝑋(𝑖−1) + Layer(𝑋 𝑖−1 ) (so we only have to learn “the residual”
+     from the previous layer)
+         𝑋(𝑖−1)        Layer     +     𝑋(𝑖)
+
+
+
+   • Gradient is great through the residual
+                                                        [no residuals]        [residuals]
+     connection; it’s 1!
+                                                           [Loss landscape visualization,
+   • Bias towards the identity function!
+                                                            Li et al., 2018, on a ResNet]   133
+Layer normalization [Ba et al., 2016]
+
+• Layer normalization is a trick to help models train faster.
+• Idea: cut down on uninformative variation in hidden vector values by normaliz
+  ing to unit mean and standard deviation within each layer.        Xu et al., 2019
+
+
+
+
+   • LayerNorm’s success may be due to its normalizing gradients [Xu et al., 2019]
+• Let 𝑥 ∈ ℝ𝑑 be an individual (word) vector in the model.
+• Let 𝜇 = σ𝑑𝑗=1 𝑥𝑗 ; this is the mean; 𝜇 ∈ ℝ.
+              1 𝑑          2
+• Let 𝜎 =       σ𝑗=1 𝑥𝑗 − 𝜇 ; this is the standard deviation; 𝜎 ∈ ℝ.
+              𝑑
+
+• Let 𝛾 ∈ ℝ𝑑 and 𝛽 ∈ ℝ𝑑 be learned “gain” and “bias” parameters. (Can omit!)
+• Then layer normalization computes:
+                                   𝑥 −𝜇
+                          output =         ∗𝛾+𝛽
+                                     𝜎+𝜖
+            Normalize by scalar                            Modulate by learned
+                                                                                       134
+            mean and variance                              elementwise gain and bias
+The Transformer Decoder
+   • The Transformer Decoder is a
+     stack of Transformer Decoder
+     Blocks.
+   • Each Block consists of:
+      • Self-attention
+      • Add & Norm
+      • Feed-Forward
+      • Add & Norm
+   • That’s it! We’ve gone through
+     the Transformer Decoder.
+
+
+
+
+                                     135
+The Transformer Encoder
+   • The Transformer Decoder
+     constrains to unidirectional
+     context, as for language
+     models.
+   • What if we want bidirectional
+     context, like in a bidirectional
+     RNN?
+   • This is the Transformer
+     Encoder. The only difference is
+     that we remove the masking
+     in the self-attention.
+
+                            No Masking!
+
+                                          136
+The Transformer Encoder-Decoder
+   • Recall that in machine
+     translation, we processed the
+     source sentence with a
+     bidirectional model and
+     generated the target with a
+     unidirectional model.
+   • For this kind of seq2seq
+     format, we often use a
+     Transformer Encoder-Decoder.
+   • We use a normal Transformer
+     Encoder.
+   • Our Transformer Decoder is
+     modified to perform cross-
+     attention to the output of the
+     Encoder.                         137
+Cross-attention (details)
+
+   • We saw that self-attention is when keys,
+     queries, and values come from the same
+     source.
+   • In the decoder, we have attention that l     ℎ1, … , ℎ𝑛
+     ooks more like what we saw last week.
+   • Let ℎ1 , … , ℎ𝑛 be output vectors from the
+     Transformer encoder; 𝑥𝑖 ∈ ℝ𝑑
+   • Let 𝑧1 , … , 𝑧𝑛 be input vectors from the
+                                                               𝑧1 , … , 𝑧𝑛
+     Transformer decoder, 𝑥𝑖 ∈ ℝ𝑑
+   • Then keys and values are drawn from the
+     encoder (like a memory):
+      • 𝑘𝑖 = 𝐾ℎ𝑖 , 𝑣𝑖 = 𝑉ℎ𝑖 .
+   • And the queries are drawn from the
+     decoder, 𝑞𝑖 = 𝑄𝑧𝑖 .                                        138
+Cross-attention (details)
+ • Let’s look at how cross-attention is computed, in matrices.
+    • Let H = ℎ1; … ; ℎ𝑇 ∈ ℝ𝑇×𝑑 be the concatenation of encoder vectors.
+    • Let Z = 𝑧1; … ; 𝑧𝑇 ∈ ℝ𝑇×𝑑 be the concatenation of decoder vectors.
+    • The output is defined as output = softmax 𝑍𝑄 𝐻𝐾 ⊤ × 𝐻𝑉.
+
+First, take the query-key dot                                         All pairs of attent
+products in one matrix               𝑍𝑄             = 𝑍𝑄𝐾⊤ 𝐻⊤         ion scores!
+multiplication: 𝑍𝑄 𝐻𝐾 ⊤                    𝐾 ⊤ 𝐻⊤
+                                                                ∈ ℝ𝑇×𝑇
+
+Next, softmax, and co
+mpute the weighted a
+verage with another m
+                                softmax   𝑍𝑄𝐾⊤ 𝐻⊤   𝐻𝑉   =
+atrix multiplication.                                            output ∈ ℝ𝑇×𝑑
+                                                                                     139
+   Great Results with Transformers
+
+First, Machine Translation from the original Transformers paper!
+
+
+
+
+               Not just better Machine               Also more efficient to
+               Translation BLEU scores               train!
+  [Test sets: WMT 2014 English-German and English-French]            [Vaswani et al., 2017]   140
+   Great Results with Transformers
+
+First, Machine Translation from the original Transformers paper!
+
+
+
+
+               Not just better Machine               Also more efficient to
+               Translation BLEU scores               train!
+  [Test sets: WMT 2014 English-German and English-French]            [Vaswani et al., 2017]   141
+  Great Results with Transformers
+
+ Next, document generation!
+
+
+
+
+The old standard              Transformers all the way down.
+
+
+
+                                     [Liu et al., 2018]; WikiSum dataset 142
+  Great Results with Transformers
+
+ Before too long, most Transformers results also included pretraining, a method we’ll
+ go over on next lecture.
+ Transformers’ parallelizability allows for efficient pretraining, and have made them
+ the de-facto standard.
+
+On this popular aggregate
+benchmark, for example:
+
+
+
+
+  All top models are
+  Transformer (and
+  pretraining)-based.
+                                                                      [Liu et al., 2018] 143
+What would we like to fix about the Transformer?
+
+• Training instabilities (Pre vs Post norm)
+
+• Quadratic compute in self-attention :
+   • Computing all pairs of interactions means our computation grows
+     quadratically with the sequence length!
+   • For recurrent models, it only grew linearly!
+
+
+
+
+                                                                       144
+Pre vs Post norm
+
+
+
+
+       Pre-norm transformer does not need warm-ups and can be trained much efficiently   145
+Quadratic computation as a function of sequence length
+
+ • One of the benefits of self-attention over recurrence was that it’s highly
+   parallelizable.
+ • However, its total number of operations grows as 𝑂 𝑇 2 𝑑 , where 𝑇 is the
+   sequence length, and 𝑑 is the dimensionality.
+
+                                                               Need to compute all
+                  𝑋𝑄              = 𝑋𝑄𝐾 𝖳 𝑋 𝖳                  pairs of interactions!
+                         𝐾𝖳 𝑋𝖳                                  𝑂 𝑇2𝑑
+                                                 ∈ ℝ 𝑇×𝑇
+
+• Think of 𝑑 as around 𝟏, 𝟎𝟎𝟎.
+   • So, for a single (shortish) sentence, 𝑇 ≤ 30; 𝑇 2 ≤ 𝟗𝟎𝟎.
+   • In practice, we set a bound like 𝑇 = 512.
+   • But what if we’d like 𝑻 ≥ 𝟏𝟎, 𝟎𝟎𝟎? For example, to work on long documents?
+                                                                                        146
+Back to the future – RNNs are back!
+
+
+
+
+           If you want really long context, RNNs provide this (linear complexity).
+                   Modern RNNs (RWKV, Mamba, etc) are getting better!
+                                                                                     147
+Do we even need to remove the quadratic cost of attention?
+• As Transformers grow larger, a larger and larger percent of compute is outside the s
+  elf-attention portion, despite the quadratic cost.
+• In practice, production Transformer language models use quadratic cost attention
+   • The cheaper methods tend not to work as well at scale.
+   • Systems optimizations work well (Flash attention – Jun 2022)
+
+
+
+
+                                                                                   148
+   Do Transformer Modifications Transfer?
+• "Surprisingly, we find that most modifications do not meaningfully improve
+  performance."
+
+
+
+
+                                                                               149
+Thank you!
+
+
+             150
+
