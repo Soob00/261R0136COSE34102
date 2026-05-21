@@ -1,0 +1,17 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 10911.85it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: klue/roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  train:   0%|          | 0/125 [00:00<?, ?it/s]  train:   1%|          | 1/125 [00:08<18:29,  8.95s/it]  train:   2%|▏         | 2/125 [00:17<17:56,  8.75s/it]  train:   2%|▏         | 3/125 [00:26<17:56,  8.82s/it]  train:   3%|▎         | 4/125 [00:36<18:57,  9.40s/it]  train:   4%|▍         | 5/125 [00:46<18:53,  9.45s/it]  train:   5%|▍         | 6/125 [00:55<18:52,  9.51s/it]  train:   6%|▌         | 7/125 [01:05<18:36,  9.46s/it]  train:   6%|▋         | 8/125 [01:14<18:03,  9.26s/it]  train:   7%|▋         | 9/125 [01:23<17:52,  9.24s/it]  train:   8%|▊         | 10/125 [01:32<17:25,  9.09s/it]  train:   9%|▉         | 11/125 [01:41<17:22,  9.15s/it]  train:  10%|▉         | 12/125 [01:49<16:53,  8.97s/it]  train:  10%|█         | 13/125 [01:59<16:51,  9.03s/it]  train:  11%|█         | 14/125 [02:07<16:21,  8.85s/it]  train:  12%|█▏        | 15/125 [02:15<15:34,  8.49s/it]  train:  13%|█▎        | 16/125 [02:22<15:03,  8.28s/it]  train:  14%|█▎        | 17/125 [02:31<15:16,  8.49s/it]  train:  14%|█▍        | 18/125 [02:39<14:30,  8.14s/it]  train:  15%|█▌        | 19/125 [02:46<13:52,  7.85s/it]  train:  16%|█▌        | 20/125 [02:53<13:13,  7.56s/it]  train:  17%|█▋        | 21/125 [03:00<12:53,  7.44s/it]  train:  18%|█▊        | 22/125 [03:08<13:05,  7.62s/it]
