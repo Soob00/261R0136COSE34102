@@ -1,12 +1,10 @@
 {
   "status": "running",
   "current_exp": "Validity-Gated",
-  "progress": "2/3 seeds",
-  "current_seed": 123,
-  "last_update": "2026-05-21T23:09:46.341396",
+  "progress": "3/3 seeds",
+  "current_seed": 456,
+  "last_update": "2026-05-21T23:20:24.505238",
   "logs": [
-    "[22:48:29] \n[Validity-Gated] seed=123  lam=0.1",
-    "[23:00:22]   ep1: total=0.4121 cls=0.4111 cons=0.0100 | val_F1=0.7656",
-    "[23:09:46]   ep2: total=0.3239 cls=0.3226 cons=0.0130 | val_F1=0.7825"
+    "[23:20:24] \n[Validity-Gated] seed=456  lam=0.1"
   ]
 }
