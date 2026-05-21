@@ -3,9 +3,10 @@
   "current_exp": "Naive Swap",
   "progress": "3/3 seeds",
   "current_seed": 456,
-  "last_update": "2026-05-21T21:56:26.659640",
+  "last_update": "2026-05-21T22:05:52.340337",
   "logs": [
     "[21:44:30] \n[Naive Swap] seed=456  lam=0.1",
-    "[21:56:26]   ep1: total=0.4131 cls=0.4121 cons=0.0106 | val_F1=0.7715"
+    "[21:56:26]   ep1: total=0.4131 cls=0.4121 cons=0.0106 | val_F1=0.7715",
+    "[22:05:52]   ep2: total=0.3210 cls=0.3197 cons=0.0128 | val_F1=0.7813"
   ]
 }
