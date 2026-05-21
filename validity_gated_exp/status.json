@@ -1,12 +1,10 @@
 {
   "status": "running",
   "current_exp": "Baseline",
-  "progress": "2/3 seeds",
-  "current_seed": 123,
-  "last_update": "2026-05-21T18:26:48.185314",
+  "progress": "3/3 seeds",
+  "current_seed": 456,
+  "last_update": "2026-05-21T18:36:44.835914",
   "logs": [
-    "[18:09:12] \n[Baseline] seed=123  lam=0.0",
-    "[18:17:57]   ep1: total=0.4083 cls=0.4083 cons=0.0000 | val_F1=0.7786",
-    "[18:26:48]   ep2: total=0.3193 cls=0.3193 cons=0.0000 | val_F1=0.7836"
+    "[18:36:44] \n[Baseline] seed=456  lam=0.0"
   ]
 }
