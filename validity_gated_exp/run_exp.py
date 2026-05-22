@@ -304,6 +304,16 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--exp',   nargs='+', default=None,
+                        help='실행할 실험 tag (예: Strict-Gated "Naive Swap")')
+    parser.add_argument('--seeds', nargs='+', type=int, default=None,
+                        help='사용할 seed 목록 (예: 42 123)')
+    args = parser.parse_args()
+    if args.seeds:
+        SEEDS = args.seeds
+
     print('\n--- Loading K-HATERS ---')
     raw_train = load_khaters('train',      SUBSET)
     raw_val   = load_khaters('validation', 0)
@@ -358,13 +368,20 @@ if __name__ == '__main__':
         dict(tag='Strict-Gated',    mode='strict', use_cons=True,  lam=LAMBDA),
     ]
 
+    # --exp 인자로 특정 실험만 선택
+    run_ablations = ABLATIONS
+    lam_targets = [0.05, 0.2]
+    if args.exp:
+        run_ablations = [e for e in ABLATIONS if e['tag'] in args.exp]
+        lam_targets   = [l for l in lam_targets if f'VG_lam={l}' in args.exp]
+
     all_results = {}
-    for exp in ABLATIONS:
+    for exp in run_ablations:
         print(f"\n{'#'*60}\n  Experiment: {exp['tag']}\n{'#'*60}")
         all_results[exp['tag']] = run_experiment(**exp, cf_lookup=cf_lookup)
 
     # λ sensitivity (Validity-Gated; lam=0.1 is already in ABLATIONS)
-    for lam in [0.05, 0.2]:
+    for lam in lam_targets:
         key = f'VG_lam={lam}'
         all_results[key] = run_experiment(
             tag=key, mode='gated', use_cons=True, lam=lam, n_epochs=3,
