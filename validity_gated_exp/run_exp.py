@@ -35,7 +35,7 @@ from dataset import (
 BASE_DIR    = 'validity_gated_exp'   # relative; override with env var EXP_DIR
 MODEL_NAME  = 'klue/roberta-base'
 MAX_LEN     = 128
-BATCH_SIZE  = 64     # L4 24GB: 64 OK
+BATCH_SIZE  = 256    # L4 24GB: 64 OK
 EPOCHS      = 3
 LR          = 2e-5
 WEIGHT_DECAY= 0.01
@@ -89,6 +89,8 @@ def sym_kl(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
 
 
 # ── Train / Eval ──────────────────────────────────────────────────────────────
+scaler = torch.cuda.amp.GradScaler()
+
 def train_epoch(model, loader, optimizer, scheduler, use_cons: bool, lam: float):
     model.train()
     s_total = s_cls = s_cons = 0.0
@@ -99,22 +101,25 @@ def train_epoch(model, loader, optimizer, scheduler, use_cons: bool, lam: float)
         valid = batch['cf_valid'].to(device)
 
         optimizer.zero_grad()
-        logits   = model(ids, mask)
-        cls_loss = F.cross_entropy(logits, y)
-        loss     = cls_loss
-        c_val    = torch.tensor(0.0, device=device)
+        with torch.cuda.amp.autocast():
+            logits   = model(ids, mask)
+            cls_loss = F.cross_entropy(logits, y)
+            loss     = cls_loss
+            c_val    = torch.tensor(0.0, device=device)
 
-        if use_cons and 'cf_input_ids' in batch and valid.any():
-            cf_ids  = batch['cf_input_ids'].to(device)
-            cf_mask = batch['cf_attention_mask'].to(device)
-            p_o = model.probs(ids[valid],   mask[valid])
-            p_c = model.probs(cf_ids[valid], cf_mask[valid])
-            c_val = sym_kl(p_o, p_c)
-            loss  = loss + lam * c_val
+            if use_cons and 'cf_input_ids' in batch and valid.any():
+                cf_ids  = batch['cf_input_ids'].to(device)
+                cf_mask = batch['cf_attention_mask'].to(device)
+                p_o = model.probs(ids[valid],   mask[valid])
+                p_c = model.probs(cf_ids[valid], cf_mask[valid])
+                c_val = sym_kl(p_o, p_c)
+                loss  = loss + lam * c_val
 
-        loss.backward()
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
         s_total += loss.item(); s_cls += cls_loss.item(); s_cons += c_val.item()
 
@@ -405,6 +410,33 @@ if __name__ == '__main__':
             print(f'\n  [t-test] Baseline vs Validity-Gated flip_rate  '
                   f't={t:.4f}  p={p:.4f}  {"*significant*" if p < 0.05 else "n.s."} (α=0.05)')
 
+    if os.path.exists(RESULT_PATH):
+        with open(RESULT_PATH, 'r', encoding='utf-8') as f:
+            existing = json.load(f)
+        existing.update(all_results)
+        all_results = existing
     with open(RESULT_PATH, 'w', encoding='utf-8') as f:
         json.dump(all_results, f, ensure_ascii=False, indent=2)
     print(f'\nResults saved → {RESULT_PATH}')
+
+    import csv, statistics
+    csv_path = RESULT_PATH.replace('.json', '.csv')
+    rows = []
+    for exp_tag, metrics in all_results.items():
+        if not isinstance(metrics, dict) or 'f1' not in metrics:
+            continue
+        def _m(vals): return round(statistics.mean(vals), 4) if vals else ''
+        def _s(vals): return round(statistics.stdev(vals), 4) if len(vals) > 1 else ''
+        rows.append({
+            'experiment': exp_tag,
+            'f1_mean': _m(metrics['f1']), 'f1_std': _s(metrics['f1']),
+            'flip_rate_mean': _m(metrics['flip_rate']), 'flip_rate_std': _s(metrics['flip_rate']),
+            'logit_gap_mean': _m(metrics['logit_gap']), 'logit_gap_std': _s(metrics['logit_gap']),
+            'fpr_gap_mean': _m(metrics['fpr_gap']), 'fpr_gap_std': _s(metrics['fpr_gap']),
+        })
+    if rows:
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f'CSV saved → {csv_path}')

@@ -144,7 +144,7 @@ _SEMANTIC_BLACKLIST: dict[str, list[str]] = {
 
 # Strict gate용 확장 blacklist (기존 항목 + 추가)
 _SEMANTIC_BLACKLIST_STRICT: dict[str, list[str]] = {
-    'ethnicity': _SEMANTIC_BLACKLIST['ethnicity'] + ['식민지', '침략', '전쟁범죄', '역사'],
+    'ethnicity': _SEMANTIC_BLACKLIST['ethnicity'] + ['식민지', '침략', '전쟁범죄'],
     'gender':    _SEMANTIC_BLACKLIST['gender']    + ['생리', '군대', '병역', '군필'],
     'religion':  _SEMANTIC_BLACKLIST['religion']  + ['이단', '사이비', '교주', '세뇌'],
     'sexuality': _SEMANTIC_BLACKLIST['sexuality'] + ['에이즈', 'HIV', '성전환'],
@@ -163,17 +163,25 @@ _ASYMMETRIC_PAIRS: set[tuple[str, str]] = {
     ('할아버지', '젊은남자'), ('젊은남자', '할아버지'),
 }
 
-# Strict gate: 사회적 비대칭성이 높은 ethnicity/religion 쌍 추가
-_ASYMMETRIC_PAIRS_STRICT: set[tuple[str, str]] = _ASYMMETRIC_PAIRS | {
-    ('조선족', '한국인'), ('탈북민', '남한사람'),
-    ('베트남인', '한국인'), ('재일교포', '한국인'),
-    ('동남아인', '한국인'), ('외국인', '내국인'),
-    ('무슬림', '기독교인'), ('무슬림', '천주교인'),
-    ('이슬람', '기독교'), ('이슬람교도', '기독교인'),
-}
+# Strict gate: pair-level asymmetric set은 기존 기준을 유지하고,
+# ethnicity/religion은 pair 전면 차단 대신 context blacklist로 처리한다.
+_ASYMMETRIC_PAIRS_STRICT: set[tuple[str, str]] = set(_ASYMMETRIC_PAIRS)
 
 # 비교 구문 조사/부사 (④)
-_COMPARISON_TOKENS: set[str] = {'보다', '처럼', '만큼', '대비', '반면', '달리'}
+_COMPARISON_TOKENS: set[str] = {
+    '보다', '처럼', '만큼', '대비', '반면', '달리',
+    '비해', '비해서', '비하면',
+}
+
+# age swap: 문장에 명시적 나이대 표현이 있으면 의미 모순 가능 (예: 60대 청년)
+_AGE_DECADE_PATTERNS: list[str] = [
+    '10대', '20대', '30대', '40대', '50대',
+    '60대', '70대', '80대', '90대',
+]
+
+def has_age_decade_context(text: str) -> bool:
+    return any(p in text for p in _AGE_DECADE_PATTERNS)
+
 
 # 목적어 + 사건 맥락 키워드 (③ 제한 적용)
 _EVENT_OBJ_KEYWORDS: set[str] = {
@@ -235,10 +243,13 @@ def compute_validity_strict(
         and valid_semantics
     )
 
-    # ④ 비교 구문 필터: 원문 토큰에 비교 표현 있으면 제거
+    # ④ 비교 구문 필터: 토큰 기준 + raw text 기준 모두 체크
     tokens = kiwi.tokenize(original)
     token_forms = [t.form for t in tokens]
-    no_comparison = not any(p in token_forms for p in _COMPARISON_TOKENS)
+    no_comparison = (
+        not any(p in token_forms for p in _COMPARISON_TOKENS)
+        and not any(p in original for p in _COMPARISON_TOKENS)
+    )
 
     # ③ 목적어+사건맥락 필터 (전면 적용 아님 — 목적어이면서 사건 키워드 동반 시만)
     no_harmful_obj = True
@@ -250,9 +261,14 @@ def compute_validity_strict(
                     no_harmful_obj = False
                     break
 
+    # age swap: 문장에 명시적 나이대 표현 있으면 의미 모순 가능
+    no_age_contradiction = True
+    if cat == 'age' and has_age_decade_context(original + ' ' + cf):
+        no_age_contradiction = False
+
     use_for_ccr = (
         valid_grammar and valid_semantics and label_preserving
-        and no_comparison and no_harmful_obj
+        and no_comparison and no_harmful_obj and no_age_contradiction
     )
     return {
         'same_category':    True,
