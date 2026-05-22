@@ -27,7 +27,8 @@ import warnings; warnings.filterwarnings('ignore')
 from dataset import (
     SWAP_PAIRS_BY_CAT, SWAP_MAP, SWAP_KEYS, kiwi,
     find_swap, find_swap_naive, make_swap, make_swap_naive,
-    compute_validity, load_khaters, save_cf_pairs, HatersDataset,
+    compute_validity, compute_validity_strict,
+    load_khaters, save_cf_pairs, load_cf_pairs, HatersDataset,
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -221,12 +222,13 @@ def eval_fairness(model, test_examples, tokenizer):
 
 # ── Experiment runner ─────────────────────────────────────────────────────────
 def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
-                   seeds=None, n_epochs: int = EPOCHS):
+                   seeds=None, n_epochs: int = EPOCHS, cf_lookup: dict | None = None):
     if seeds is None:
         seeds = SEEDS
 
     metrics = {
         'f1': [], 'flip_rate': [], 'logit_gap': [], 'fpr_gap': [],
+        'epoch_history': [],   # [{seed, epochs: [{ep, val_f1, total_loss, cls_loss, cons_loss}]}]
     }
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -238,7 +240,8 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
         print(f'\n[{tag}] seed={seed}  lam={lam}')
         set_seed(seed)
 
-        tr_ds = HatersDataset(train_data, tokenizer, MAX_LEN, mode=mode)
+        tr_ds = HatersDataset(train_data, tokenizer, MAX_LEN, mode=mode,
+                              cf_lookup=cf_lookup)
         tr_dl = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=True,
                            num_workers=4, pin_memory=torch.cuda.is_available())
 
@@ -251,10 +254,15 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
 
         best_f1 = 0.0
         best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+        seed_epochs = []
         for ep in range(1, n_epochs + 1):
             tl, cl, cons = train_epoch(model, tr_dl, opt, scheduler, use_cons, lam)
             vf1 = eval_f1(model, va_dl)
             print(f'  ep{ep}: total={tl:.4f} cls={cl:.4f} cons={cons:.4f} | val_F1={vf1:.4f}')
+            seed_epochs.append({
+                'ep': ep, 'val_f1': round(vf1, 6),
+                'total_loss': round(tl, 6), 'cls_loss': round(cl, 6), 'cons_loss': round(cons, 6),
+            })
             if vf1 > best_f1:
                 best_f1 = vf1
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -279,6 +287,7 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
         metrics['flip_rate'].append(flip)
         metrics['logit_gap'].append(lgap)
         metrics['fpr_gap'].append(fpr_gap)
+        metrics['epoch_history'].append({'seed': seed, 'epochs': seed_epochs})
 
         del model; gc.collect(); torch.cuda.empty_cache()
 
@@ -335,23 +344,31 @@ if __name__ == '__main__':
 
     train_data, val_data, test_data = raw_train, raw_val, raw_test
 
+    # pre-computed CF pairs 로딩 (있으면 kiwi find_swap+make_swap 생략)
+    cf_lookup = None
+    if os.path.exists(cf_path):
+        cf_lookup = load_cf_pairs(cf_path)
+        print(f'Pre-computed CF pairs loaded: {len(cf_lookup)} entries → kiwi skipped for swap/gated/strict')
+
     ABLATIONS = [
-        dict(tag='Baseline',        mode='none',  use_cons=False, lam=0.0),
-        dict(tag='Masking Cons Reg',mode='mask',  use_cons=True,  lam=LAMBDA),
-        dict(tag='Naive Swap',      mode='swap',  use_cons=True,  lam=LAMBDA),
-        dict(tag='Validity-Gated',  mode='gated', use_cons=True,  lam=LAMBDA),
+        dict(tag='Baseline',        mode='none',   use_cons=False, lam=0.0),
+        dict(tag='Masking Cons Reg',mode='mask',   use_cons=True,  lam=LAMBDA),
+        dict(tag='Naive Swap',      mode='swap',   use_cons=True,  lam=LAMBDA),
+        dict(tag='Validity-Gated',  mode='gated',  use_cons=True,  lam=LAMBDA),
+        dict(tag='Strict-Gated',    mode='strict', use_cons=True,  lam=LAMBDA),
     ]
 
     all_results = {}
     for exp in ABLATIONS:
         print(f"\n{'#'*60}\n  Experiment: {exp['tag']}\n{'#'*60}")
-        all_results[exp['tag']] = run_experiment(**exp)
+        all_results[exp['tag']] = run_experiment(**exp, cf_lookup=cf_lookup)
 
     # λ sensitivity (Validity-Gated; lam=0.1 is already in ABLATIONS)
     for lam in [0.05, 0.2]:
         key = f'VG_lam={lam}'
         all_results[key] = run_experiment(
-            tag=key, mode='gated', use_cons=True, lam=lam, n_epochs=3)
+            tag=key, mode='gated', use_cons=True, lam=lam, n_epochs=3,
+            cf_lookup=cf_lookup)
 
     # Summary table
     def _fmt(lst): return f'{np.mean(lst):.4f}±{np.std(lst):.4f}' if lst else 'N/A'

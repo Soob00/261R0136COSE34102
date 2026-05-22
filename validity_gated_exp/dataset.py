@@ -142,6 +142,17 @@ _SEMANTIC_BLACKLIST: dict[str, list[str]] = {
     'sexuality': ['결혼', '입양', '헌혈', '군대', '병역'],
 }
 
+# Strict gate용 확장 blacklist (기존 항목 + 추가)
+_SEMANTIC_BLACKLIST_STRICT: dict[str, list[str]] = {
+    'ethnicity': _SEMANTIC_BLACKLIST['ethnicity'] + ['식민지', '침략', '전쟁범죄', '역사'],
+    'gender':    _SEMANTIC_BLACKLIST['gender']    + ['생리', '군대', '병역', '군필'],
+    'religion':  _SEMANTIC_BLACKLIST['religion']  + ['이단', '사이비', '교주', '세뇌'],
+    'sexuality': _SEMANTIC_BLACKLIST['sexuality'] + ['에이즈', 'HIV', '성전환'],
+    'age':       _SEMANTIC_BLACKLIST['age']       + ['60대', '70대', '80대', '90대',
+                                                      '고령', '은퇴', '노후', '요양', '치매'],
+    'disability': [],
+}
+
 _ASYMMETRIC_PAIRS: set[tuple[str, str]] = {
     ('게이', '이성애자'), ('이성애자', '게이'),
     ('레즈비언', '이성애자'), ('이성애자', '레즈비언'),
@@ -150,6 +161,24 @@ _ASYMMETRIC_PAIRS: set[tuple[str, str]] = {
     ('퀴어', '이성애자'), ('이성애자', '퀴어'),
     ('할머니', '젊은여자'), ('젊은여자', '할머니'),
     ('할아버지', '젊은남자'), ('젊은남자', '할아버지'),
+}
+
+# Strict gate: 사회적 비대칭성이 높은 ethnicity/religion 쌍 추가
+_ASYMMETRIC_PAIRS_STRICT: set[tuple[str, str]] = _ASYMMETRIC_PAIRS | {
+    ('조선족', '한국인'), ('탈북민', '남한사람'),
+    ('베트남인', '한국인'), ('재일교포', '한국인'),
+    ('동남아인', '한국인'), ('외국인', '내국인'),
+    ('무슬림', '기독교인'), ('무슬림', '천주교인'),
+    ('이슬람', '기독교'), ('이슬람교도', '기독교인'),
+}
+
+# 비교 구문 조사/부사 (④)
+_COMPARISON_TOKENS: set[str] = {'보다', '처럼', '만큼', '대비', '반면', '달리'}
+
+# 목적어 + 사건 맥락 키워드 (③ 제한 적용)
+_EVENT_OBJ_KEYWORDS: set[str] = {
+    '폭행', '살해', '강간', '임신', '출산', '생식', '피해',
+    '고소', '처벌', '신고', '학대', '착취',
 }
 
 def _check_grammar(cf: str, swap_term: str) -> bool:
@@ -186,6 +215,56 @@ def compute_validity(
     }
 
 
+def compute_validity_strict(
+    original: str, cf: str,
+    orig_term: str, swap_term: str, cat: str,
+) -> dict[str, bool]:
+    """Strict validity gate.
+    기존 기준 + ① asymmetric pair 확장 + ② semantic blacklist 보강
+              + ④ 비교 구문 필터 + ③ 목적어+사건맥락 제한 필터
+    """
+    valid_grammar = _check_grammar(cf, swap_term)
+
+    # ② 확장된 blacklist
+    blacklist = _SEMANTIC_BLACKLIST_STRICT.get(cat, [])
+    valid_semantics = not any(kw in original + ' ' + cf for kw in blacklist)
+
+    # ① 확장된 asymmetric pairs
+    label_preserving = (
+        (orig_term, swap_term) not in _ASYMMETRIC_PAIRS_STRICT
+        and valid_semantics
+    )
+
+    # ④ 비교 구문 필터: 원문 토큰에 비교 표현 있으면 제거
+    tokens = kiwi.tokenize(original)
+    token_forms = [t.form for t in tokens]
+    no_comparison = not any(p in token_forms for p in _COMPARISON_TOKENS)
+
+    # ③ 목적어+사건맥락 필터 (전면 적용 아님 — 목적어이면서 사건 키워드 동반 시만)
+    no_harmful_obj = True
+    for i, t in enumerate(tokens):
+        if t.form == orig_term and i + 1 < len(tokens):
+            nxt = tokens[i + 1]
+            if str(nxt.tag).startswith('J') and nxt.form in ('을', '를'):
+                if any(kw in original for kw in _EVENT_OBJ_KEYWORDS):
+                    no_harmful_obj = False
+                    break
+
+    use_for_ccr = (
+        valid_grammar and valid_semantics and label_preserving
+        and no_comparison and no_harmful_obj
+    )
+    return {
+        'same_category':    True,
+        'valid_grammar':    valid_grammar,
+        'valid_semantics':  valid_semantics,
+        'label_preserving': label_preserving,
+        'no_comparison':    no_comparison,
+        'no_harmful_obj':   no_harmful_obj,
+        'use_for_ccr':      use_for_ccr,
+    }
+
+
 # ── K-HATERS 로딩 ─────────────────────────────────────────────────────────────
 HATE_LABELS = {'offensive', 'L1_hate', 'L2_hate'}
 
@@ -213,6 +292,18 @@ def load_khaters(split: str, subset: int = 0, seed: int = 42) -> list:
         rng.shuffle(examples)
 
     return examples
+
+
+def load_cf_pairs(path: str) -> dict[str, tuple[str, str, str, str]]:
+    """JSONL → {original_text: (cf_text, orig_term, swap_term, cat)}
+    pre-computed CF pairs를 로딩해 kiwi find_swap+make_swap 호출을 생략한다.
+    """
+    lookup: dict[str, tuple[str, str, str, str]] = {}
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            p = json.loads(line)
+            lookup[p['original']] = (p['cf'], p['orig_term'], p['swap_term'], p['category'])
+    return lookup
 
 
 def save_cf_pairs(examples: list, path: str) -> None:
@@ -249,9 +340,16 @@ class HatersDataset(Dataset):
           'mask'   → original + [MASK] replacement (Masking Cons Reg)
           'swap'   → original + identity swap, no gate (Naive Swap)
           'gated'  → original + identity swap + validity gate (Validity-Gated)
+          'strict' → original + identity swap + strict validity gate (Strict-Gated)
+
+    cf_lookup: load_cf_pairs()로 로딩한 dict {text: (cf_text, orig_term, swap_term, cat)}
+               제공 시 find_swap + make_swap(kiwi) 호출을 생략 → 대규모 데이터에서 빠름.
+               mask 모드는 make_swap을 여전히 사용하나 find_swap은 스킵됨.
     """
-    def __init__(self, examples: list, tokenizer, max_len: int, mode: str = 'none'):
-        assert mode in ('none', 'mask', 'swap', 'gated')
+    def __init__(self, examples: list, tokenizer, max_len: int,
+                 mode: str = 'none',
+                 cf_lookup: dict | None = None):
+        assert mode in ('none', 'mask', 'swap', 'gated', 'strict')
         self.tok, self.max_len, self.mode = tokenizer, max_len, mode
         self.items = []
         for text, label, targets in examples:
@@ -260,17 +358,33 @@ class HatersDataset(Dataset):
             cf_valid = False
 
             if mode != 'none':
-                orig_term, swap_term, cat = find_swap(text)
-                has_swap = orig_term is not None
+                # fast path: pre-computed CF lookup (kiwi find_swap + make_swap 생략)
+                if cf_lookup is not None:
+                    entry = cf_lookup.get(text)
+                    if entry is not None:
+                        precomp_cf, orig_term, swap_term, cat = entry
+                        has_swap = True
+                    else:
+                        has_swap = False
+                    precomp_cf = precomp_cf if has_swap else None
+                else:
+                    orig_term, swap_term, cat = find_swap(text)
+                    has_swap = orig_term is not None
+                    precomp_cf = None
 
                 if has_swap and mode == 'swap':
-                    cf_text  = make_swap(text, orig_term, swap_term)
-                    cf_valid = True   # gate 없음: 형태소 기반 생성 pair 전체 사용
+                    cf_text  = precomp_cf or make_swap(text, orig_term, swap_term)
+                    cf_valid = True
                 elif has_swap and mode == 'gated':
-                    cf_text  = make_swap(text, orig_term, swap_term)
+                    cf_text  = precomp_cf or make_swap(text, orig_term, swap_term)
                     validity = compute_validity(text, cf_text, orig_term, swap_term, cat)
-                    cf_valid = validity['use_for_ccr']   # gate 있음: use_for_ccr=True만 사용
+                    cf_valid = validity['use_for_ccr']
+                elif has_swap and mode == 'strict':
+                    cf_text  = precomp_cf or make_swap(text, orig_term, swap_term)
+                    validity = compute_validity_strict(text, cf_text, orig_term, swap_term, cat)
+                    cf_valid = validity['use_for_ccr']
                 elif mode == 'mask' and has_swap:
+                    # mask CF는 pre-computed에 없으므로 make_swap 필요
                     cf_text  = make_swap(text, orig_term, tokenizer.mask_token)
                     cf_valid = True
 
