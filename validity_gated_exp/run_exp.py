@@ -32,7 +32,7 @@ from dataset import (
     compute_validity, compute_validity_strict,
     load_khaters, save_cf_pairs, load_cf_pairs, HatersDataset,
 )
-from experiment_utils import coverage_matched_lambda, merge_result_maps
+from experiment_utils import coverage_matched_lambda, merge_result_maps, parse_strict_lambda_tags
 
 # ── Config ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -611,10 +611,9 @@ if __name__ == '__main__':
 
     # --exp 인자로 특정 실험만 선택
     run_ablations = ABLATIONS
-    lam_targets = [0.05, 0.2]
+    lam_targets = parse_strict_lambda_tags(args.exp)
     if args.exp:
         run_ablations = [e for e in ABLATIONS if e['tag'] in args.exp]
-        lam_targets   = [l for l in lam_targets if f'Strict_lam={l}' in args.exp]
 
     all_results = {}
     for exp in run_ablations:

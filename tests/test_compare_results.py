@@ -107,6 +107,30 @@ class CompareResultsTest(unittest.TestCase):
         )
         self.assertEqual(best, ("Strict_lam=0.2", 0.83))
 
+    def test_recommended_next_steps_request_matched_and_lambda_when_naive_wins(self):
+        results = {
+            "Baseline": {"f1": [0.79]},
+            "Naive Swap": {"f1": [0.79], "strict_pair_accuracy": [0.83]},
+            "Strict-Gated": {"f1": [0.79], "strict_pair_accuracy": [0.80]},
+        }
+
+        steps = compare_results.recommended_next_steps(results)
+        joined = "\n".join(steps)
+        self.assertIn("Run Strict-Matched", joined)
+        self.assertIn("Strict_lam=0.15", joined)
+        self.assertIn("validity-coverage tradeoff", joined)
+
+    def test_recommended_next_steps_freezes_search_when_gated_wins(self):
+        results = {
+            "Baseline": {"f1": [0.79]},
+            "Naive Swap": {"f1": [0.79], "strict_pair_accuracy": [0.82]},
+            "Strict-Gated": {"f1": [0.795], "strict_pair_accuracy": [0.83]},
+        }
+
+        steps = compare_results.recommended_next_steps(results)
+        self.assertEqual(len(steps), 1)
+        self.assertIn("Freeze the method search", steps[0])
+
     def test_loading_and_markdown_table_from_json(self):
         payload = {
             "_meta": {"git_commit": "abc123", "gate_version": "v1", "model": "klue/roberta-base"},

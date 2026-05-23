@@ -127,6 +127,41 @@ def best_variant_by(results: dict[str, dict[str, Any]], names: list[str], metric
     return max(scored, key=lambda x: x[1])
 
 
+def has_strict_lambda_followup(results: dict[str, dict[str, Any]]) -> bool:
+    return any(name.startswith("Strict_lam=") for name in results)
+
+
+def recommended_next_steps(results: dict[str, dict[str, Any]]) -> list[str]:
+    steps: list[str] = []
+    missing_core = [name for name in ("Baseline", "Naive Swap", "Strict-Gated") if name not in results]
+    if missing_core:
+        steps.append(f"Run the missing core methods under the current commit: {', '.join(missing_core)}.")
+
+    naive = results.get("Naive Swap")
+    strict_names = [name for name in results if is_strict_family(name)]
+    best_strict = best_variant_by(results, strict_names, "strict_pair_accuracy")
+    if naive and best_strict:
+        best_name, best_sp = best_strict
+        naive_sp = mean_or_none(naive.get("strict_pair_accuracy"))
+        best_f1 = mean_or_none(results[best_name].get("f1"))
+        naive_f1 = mean_or_none(naive.get("f1"))
+        f1_close = best_f1 is not None and naive_f1 is not None and abs(best_f1 - naive_f1) <= 0.01
+
+        if naive_sp is not None and best_sp < naive_sp:
+            if "Strict-Matched" not in results:
+                steps.append("Run Strict-Matched to test whether the strict gate is simply under-regularized by lower CF coverage.")
+            if not has_strict_lambda_followup(results):
+                steps.append("Run targeted Strict_lam follow-ups, e.g. Strict_lam=0.15 and Strict_lam=0.25, before changing the method.")
+            if f1_close:
+                steps.append("If gated variants still trail Naive, keep the method as a validity-coverage tradeoff rather than forcing a stronger claim.")
+        elif naive_sp is not None and best_sp >= naive_sp and f1_close:
+            steps.append("Freeze the method search and move to error analysis/report writing; the gated result is strong enough.")
+
+    if not steps:
+        steps.append("No automatic follow-up is triggered; inspect metadata warnings and qualitative errors before launching more runs.")
+    return steps
+
+
 def print_table(results: dict[str, dict[str, Any]]) -> None:
     name_w = max(12, *(len(k) for k in results))
     headers = ["Experiment"] + [label for _, label, _ in PRIMARY_METRICS]
@@ -329,6 +364,13 @@ def print_interpretation_notes(results: dict[str, dict[str, Any]]) -> None:
             print("- If Naive still beats this variant, run Strict-Matched to separate low coverage from gate quality.")
 
 
+def print_next_step_recommendations(results: dict[str, dict[str, Any]]) -> None:
+    print("\nRecommended next steps")
+    print("----------------------")
+    for step in recommended_next_steps(results):
+        print(f"- {step}")
+
+
 def print_markdown_table(results: dict[str, dict[str, Any]]) -> None:
     print("\nMarkdown table")
     print("--------------")
@@ -358,6 +400,7 @@ def main() -> None:
     print_table(results)
     print_baseline_deltas(results)
     print_interpretation_notes(results)
+    print_next_step_recommendations(results)
     print_markdown_table(results)
 
 

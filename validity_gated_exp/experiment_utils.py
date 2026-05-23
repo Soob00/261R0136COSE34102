@@ -66,3 +66,30 @@ def merge_result_maps(existing: dict, new: dict, source: str = "new_run") -> tup
     if "_meta" in new:
         merged["_meta"] = new["_meta"]
     return merged, renames
+
+
+def parse_strict_lambda_tags(exp_tags: list[str] | None) -> list[float]:
+    """Extract lambda values from --exp tags like Strict_lam=0.15.
+
+    This keeps lambda follow-up runs explicit in the result table instead of
+    reusing the generic Strict-Gated row name.
+    """
+    if not exp_tags:
+        return [0.05, 0.2]
+
+    values: list[float] = []
+    seen: set[float] = set()
+    for tag in exp_tags:
+        if not tag.startswith("Strict_lam="):
+            continue
+        raw_value = tag.split("=", 1)[1]
+        try:
+            value = float(raw_value)
+        except ValueError as exc:
+            raise ValueError(f"Invalid Strict_lam tag: {tag}") from exc
+        if value <= 0:
+            raise ValueError(f"Strict_lam must be positive: {tag}")
+        if value not in seen:
+            values.append(value)
+            seen.add(value)
+    return values

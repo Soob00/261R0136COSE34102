@@ -86,6 +86,19 @@ class ExperimentUtilsTest(unittest.TestCase):
         self.assertEqual(renames, [])
         self.assertEqual(merged["Strict-Gated"]["f1"], [0.80])
 
+    def test_parse_strict_lambda_tags_defaults_for_full_run(self):
+        self.assertEqual(experiment_utils.parse_strict_lambda_tags(None), [0.05, 0.2])
+
+    def test_parse_strict_lambda_tags_accepts_arbitrary_followups(self):
+        tags = ["Naive Swap", "Strict_lam=0.15", "Strict_lam=0.25", "Strict_lam=0.15"]
+        self.assertEqual(experiment_utils.parse_strict_lambda_tags(tags), [0.15, 0.25])
+
+    def test_parse_strict_lambda_tags_rejects_bad_values(self):
+        with self.assertRaises(ValueError):
+            experiment_utils.parse_strict_lambda_tags(["Strict_lam=abc"])
+        with self.assertRaises(ValueError):
+            experiment_utils.parse_strict_lambda_tags(["Strict_lam=0"])
+
 
 if __name__ == "__main__":
     unittest.main()
