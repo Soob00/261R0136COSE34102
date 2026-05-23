@@ -10,7 +10,8 @@ Ablation 4종:
   Strict-Gated      : L_cls + KL(orig || swap, strict validity gate)
 """
 
-import os, sys, json, random, gc
+import os, sys, json, random, gc, subprocess
+from contextlib import nullcontext
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from collections import Counter, defaultdict
 
@@ -26,23 +27,43 @@ from tqdm import tqdm
 import warnings; warnings.filterwarnings('ignore')
 
 from dataset import (
-    SWAP_PAIRS_BY_CAT, SWAP_MAP, SWAP_KEYS, kiwi,
+    GATE_VERSION, SWAP_PAIRS_BY_CAT, SWAP_MAP, SWAP_KEYS, kiwi,
     find_swap, find_swap_naive, make_swap, make_swap_naive,
     compute_validity, compute_validity_strict,
     load_khaters, save_cf_pairs, load_cf_pairs, HatersDataset,
 )
+from experiment_utils import (
+    build_result_snapshot,
+    collect_fairness_error_examples,
+    coverage_matched_lambda,
+    merge_result_maps,
+    parse_strict_lambda_tags,
+    unknown_experiment_tags,
+)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BASE_DIR    = 'validity_gated_exp'   # relative; override with env var EXP_DIR
+SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR    = SCRIPT_DIR   # override with env var EXP_DIR or --base_dir
 MODEL_NAME  = 'klue/roberta-base'
 MAX_LEN     = 128
-BATCH_SIZE  = 256    # L4 24GB: 64 OK
+BATCH_SIZE  = 256    # L4 24GB; keep fixed across ablations
 EPOCHS      = 3
-LR          = 3e-5
+LR          = 2e-5
 WEIGHT_DECAY= 0.01
 LAMBDA      = 0.1
+MAX_MATCHED_LAMBDA = 0.3
+MAX_ERROR_EXAMPLES_PER_BUCKET = 5
 SEEDS       = [42, 123, 456]
 SUBSET      = 0      # 0 = full 172K
+NUM_WORKERS = 4
+AVAILABLE_EXPERIMENT_TAGS = (
+    'Baseline',
+    'Masking Cons Reg',
+    'Naive Swap',
+    'Validity-Gated',
+    'Strict-Gated',
+    'Strict-Matched',
+)
 
 BASE_DIR = os.environ.get('EXP_DIR', BASE_DIR)
 
@@ -50,10 +71,53 @@ CKPT_DIR    = os.path.join(BASE_DIR, 'checkpoints')
 RESULT_PATH = os.path.join(BASE_DIR, 'results_final.json')
 os.makedirs(CKPT_DIR, exist_ok=True)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if torch.cuda.is_available():
+    device = torch.device('cuda')
+elif getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available():
+    device = torch.device('mps')
+else:
+    device = torch.device('cpu')
 print(f'Device : {device}')
 print(f'Model  : {MODEL_NAME}')
 print(f'Swap terms: {len(SWAP_KEYS)}개 ({len(SWAP_PAIRS_BY_CAT)} categories)')
+
+
+def amp_context():
+    if torch.cuda.is_available():
+        return torch.cuda.amp.autocast()
+    return nullcontext()
+
+
+def make_scaler():
+    return torch.cuda.amp.GradScaler(enabled=torch.cuda.is_available())
+
+
+def git_commit() -> str:
+    repo_root = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+    try:
+        out = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return out.strip()
+    except Exception:
+        return 'unknown'
+
+
+def git_dirty() -> bool:
+    repo_root = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+    try:
+        out = subprocess.check_output(
+            ['git', 'status', '--porcelain'],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return bool(out.strip())
+    except Exception:
+        return False
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 def set_seed(seed: int):
@@ -95,23 +159,31 @@ def sym_kl(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
 def train_epoch(model, loader, optimizer, scheduler, scaler, use_cons: bool, lam: float):
     model.train()
     s_total = s_cls = s_cons = 0.0
+    cons_batches = 0
+    valid_cf_total = 0
     for batch in tqdm(loader, desc='  train', leave=False):
         ids  = batch['input_ids'].to(device)
         mask = batch['attention_mask'].to(device)
         y    = batch['label'].to(device)
         valid = batch['cf_valid'].to(device)
+        valid_count = int(valid.sum().item())
+        valid_cf_total += valid_count
 
         optimizer.zero_grad()
-        with torch.cuda.amp.autocast():
+        with amp_context():
             logits   = model(ids, mask)
             cls_loss = F.cross_entropy(logits, y)
             loss     = cls_loss
             c_val    = torch.tensor(0.0, device=device)
 
-            if use_cons and 'cf_input_ids' in batch and valid.any():
+            if use_cons and 'cf_input_ids' in batch and valid_count > 0:
+                cons_batches += 1
                 cf_ids  = batch['cf_input_ids'].to(device)
                 cf_mask = batch['cf_attention_mask'].to(device)
-                p_o = model.probs(ids[valid],   mask[valid])
+                # Reuse the already-computed original logits as the consistency
+                # anchor. Re-forwarding originals in train mode injects extra
+                # dropout noise and makes the KL signal less stable.
+                p_o = F.softmax(logits[valid], dim=-1)
                 p_c = model.probs(cf_ids[valid], cf_mask[valid])
                 c_val = sym_kl(p_o, p_c)
                 loss  = loss + lam * c_val
@@ -125,7 +197,13 @@ def train_epoch(model, loader, optimizer, scheduler, scaler, use_cons: bool, lam
         s_total += loss.item(); s_cls += cls_loss.item(); s_cons += c_val.item()
 
     n = len(loader)
-    return s_total / n, s_cls / n, s_cons / n
+    return (
+        s_total / n,
+        s_cls / n,
+        s_cons / n,
+        cons_batches / n if n else 0.0,
+        valid_cf_total / n if n else 0.0,
+    )
 
 
 def eval_f1(model, loader) -> float:
@@ -144,9 +222,12 @@ def eval_f1(model, loader) -> float:
 def eval_fairness(model, test_examples, tokenizer):
     """
     Returns:
-      flip_rate, mean_prob_gap,
+      flip_rate, mean_prob_gap, pair_accuracy,
+      strict_flip_rate, strict_prob_gap, strict_pair_accuracy,
+      n_pairs, n_strict_pairs,
       fpr_gap (max FPR across target groups - min FPR),
-      per_group_fpr dict
+      per_group_fpr dict, per_group_fpr_detail dict,
+      fairness_error_examples dict
     """
     model.eval()
 
@@ -181,34 +262,65 @@ def eval_fairness(model, test_examples, tokenizer):
         cf_probs_map = dict(zip(swap_indices, cf_probs_list))
 
     results = []
+    pair_records = []
     for i, (text, label, orig_term, swap_term, cat, cf_text) in enumerate(meta):
         prob = orig_probs[i]
         pred = int(prob >= 0.5)
         cf_prob = cf_probs_map.get(i)
         cf_pred = int(cf_prob >= 0.5) if cf_prob is not None else None
+        strict_valid = False
+        if cf_text is not None:
+            strict_valid = compute_validity_strict(
+                text, cf_text, orig_term, swap_term, cat
+            )['use_for_ccr']
         results.append({
             'label': label, 'pred': pred, 'prob': prob,
             'cf_pred': cf_pred, 'cf_prob': cf_prob,
-            'cat': cat,
+            'cat': cat, 'strict_valid': strict_valid,
         })
+        if cf_text is not None:
+            pair_records.append({
+                'text': text,
+                'cf_text': cf_text,
+                'label': label,
+                'pred': pred,
+                'cf_pred': cf_pred,
+                'prob': prob,
+                'cf_prob': cf_prob,
+                'prob_gap': abs(prob - cf_prob) if cf_prob is not None else None,
+                'orig_term': orig_term,
+                'swap_term': swap_term,
+                'category': cat,
+                'strict_valid': strict_valid,
+            })
 
-    # Flip rate & prob gap (all swappable pairs)
+    # Flip rate, probability gap, and pair accuracy (all swappable pairs).
+    # Pair accuracy is stricter than flip rate: both original and CF must be correct.
     swap_res = [r for r in results if r['cf_pred'] is not None]
     flip_rate = (sum(r['pred'] != r['cf_pred'] for r in swap_res) / len(swap_res)
                  if swap_res else 0.0)
     mean_prob_gap = (sum(abs(r['prob'] - r['cf_prob']) for r in swap_res) / len(swap_res)
                      if swap_res else 0.0)
+    pair_accuracy = (
+        sum((r['pred'] == r['label']) and (r['cf_pred'] == r['label']) for r in swap_res)
+        / len(swap_res)
+        if swap_res else 0.0
+    )
 
     # Strict-valid subset: label-preserving pair만
     strict_res = [
         r for r, m in zip(results, meta)
-        if m[5] is not None and compute_validity_strict(
-            m[0], m[5], m[2], m[3], m[4])['use_for_ccr']
+        if m[5] is not None and r['strict_valid']
     ]
     strict_flip_rate = (sum(r['pred'] != r['cf_pred'] for r in strict_res) / len(strict_res)
                         if strict_res else 0.0)
     strict_prob_gap  = (sum(abs(r['prob'] - r['cf_prob']) for r in strict_res) / len(strict_res)
                         if strict_res else 0.0)
+    strict_pair_accuracy = (
+        sum((r['pred'] == r['label']) and (r['cf_pred'] == r['label']) for r in strict_res)
+        / len(strict_res)
+        if strict_res else 0.0
+    )
 
     # Per-CATEGORY FPR using lexicon-based group assignment
     # K-HATERS의 target_label은 label=1에만 존재 → FPR 계산에 사용 불가
@@ -225,38 +337,81 @@ def eval_fairness(model, test_examples, tokenizer):
                 group_tn[grp] += 1
 
     per_group_fpr = {}
+    per_group_fpr_detail = {}
     for grp in set(list(group_fp.keys()) + list(group_tn.keys())):
         denom = group_fp[grp] + group_tn[grp]
-        per_group_fpr[grp] = group_fp[grp] / denom if denom else 0.0
+        fpr = group_fp[grp] / denom if denom else 0.0
+        per_group_fpr[grp] = fpr
+        per_group_fpr_detail[grp] = {
+            'fp': group_fp[grp],
+            'tn': group_tn[grp],
+            'normal_n': denom,
+            'fpr': fpr,
+        }
 
     # FPR gap: identity 그룹들 사이의 격차 ('none' 제외)
     identity_fprs = {k: v for k, v in per_group_fpr.items() if k != 'none'}
     fpr_vals = list(identity_fprs.values())
     fpr_gap  = (max(fpr_vals) - min(fpr_vals)) if len(fpr_vals) >= 2 else 0.0
+    fairness_error_examples = collect_fairness_error_examples(
+        pair_records,
+        limit_per_bucket=MAX_ERROR_EXAMPLES_PER_BUCKET,
+    )
 
-    return flip_rate, mean_prob_gap, strict_flip_rate, strict_prob_gap, fpr_gap, per_group_fpr
+    return (
+        flip_rate,
+        mean_prob_gap,
+        pair_accuracy,
+        strict_flip_rate,
+        strict_prob_gap,
+        strict_pair_accuracy,
+        len(swap_res),
+        len(strict_res),
+        fpr_gap,
+        per_group_fpr,
+        per_group_fpr_detail,
+        fairness_error_examples,
+    )
 
 
 # ── Experiment runner ─────────────────────────────────────────────────────────
 def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
-                   seeds=None, n_epochs: int = EPOCHS, cf_lookup: dict | None = None):
+                   seeds=None, n_epochs: int = EPOCHS,
+                   cf_lookup: dict | None = None,
+                   lambda_strategy: str = 'fixed'):
     if seeds is None:
         seeds = SEEDS
 
     metrics = {
-        'f1': [], 'flip_rate': [], 'prob_gap': [],
-        'strict_flip_rate': [], 'strict_prob_gap': [],
+        'f1': [], 'flip_rate': [], 'prob_gap': [], 'pair_accuracy': [],
+        'strict_flip_rate': [], 'strict_prob_gap': [], 'strict_pair_accuracy': [],
+        'pair_count': [], 'strict_pair_count': [],
+        'train_valid_cf_count': [], 'train_valid_cf_ratio': [],
+        'cons_batch_ratio': [], 'avg_valid_cf_per_batch': [],
+        'lambda': [], 'effective_lambda': [],
         'fpr_gap': [],
+        'fpr_min_group_n': [],
+        'per_group_fpr_detail': [],
+        'fairness_error_examples': [],
+        'config': {
+            'tag': tag, 'mode': mode, 'use_cons': use_cons,
+            'lambda': lam, 'lambda_strategy': lambda_strategy,
+            'epochs': n_epochs,
+            'model': MODEL_NAME, 'max_len': MAX_LEN, 'batch_size': BATCH_SIZE,
+            'lr': LR, 'weight_decay': WEIGHT_DECAY,
+            'gate_version': GATE_VERSION, 'git_commit': git_commit(),
+            'git_dirty': git_dirty(),
+        },
         'epoch_history': [],   # [{seed, epochs: [{ep, val_f1, total_loss, cls_loss, cons_loss}]}]
     }
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     va_ds = HatersDataset(val_data, tokenizer, MAX_LEN, mode='none')
     va_dl = DataLoader(va_ds, batch_size=BATCH_SIZE, shuffle=False,
-                       num_workers=4, pin_memory=torch.cuda.is_available())
+                       num_workers=NUM_WORKERS, pin_memory=torch.cuda.is_available())
 
     for seed in seeds:
-        print(f'\n[{tag}] seed={seed}  lam={lam}')
+        print(f'\n[{tag}] seed={seed}  lam={lam}  strategy={lambda_strategy}')
         set_seed(seed)
 
         def worker_init_fn(worker_id):
@@ -268,8 +423,12 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
 
         tr_ds = HatersDataset(train_data, tokenizer, MAX_LEN, mode=mode,
                               cf_lookup=cf_lookup)
+        train_valid_cf_count = sum(bool(it['cf_valid']) for it in tr_ds.items)
+        train_valid_cf_ratio = train_valid_cf_count / len(tr_ds) if len(tr_ds) else 0.0
+        print(f'  train valid CF for CCR: {train_valid_cf_count} / {len(tr_ds)} '
+              f'({100 * train_valid_cf_ratio:.2f}%)')
         tr_dl = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=True,
-                           num_workers=4, pin_memory=torch.cuda.is_available(),
+                           num_workers=NUM_WORKERS, pin_memory=torch.cuda.is_available(),
                            worker_init_fn=worker_init_fn, generator=g)
 
         model = HateDetector(MODEL_NAME).to(device)
@@ -278,18 +437,24 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
         total_steps  = len(tr_dl) * n_epochs
         warmup_steps = max(1, int(0.06 * total_steps))
         scheduler = get_linear_schedule_with_warmup(opt, warmup_steps, total_steps)
-        scaler = torch.cuda.amp.GradScaler()
+        scaler = make_scaler()
 
         best_f1 = 0.0
         best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
         seed_epochs = []
         for ep in range(1, n_epochs + 1):
-            tl, cl, cons = train_epoch(model, tr_dl, opt, scheduler, scaler, use_cons, lam)
+            tl, cl, cons, cons_batch_ratio, avg_valid_cf = train_epoch(
+                model, tr_dl, opt, scheduler, scaler, use_cons, lam
+            )
             vf1 = eval_f1(model, va_dl)
-            print(f'  ep{ep}: total={tl:.4f} cls={cl:.4f} cons={cons:.4f} | val_F1={vf1:.4f}')
+            print(f'  ep{ep}: total={tl:.4f} cls={cl:.4f} cons={cons:.4f} '
+                  f'cons_batches={100*cons_batch_ratio:.1f}% valid_cf/batch={avg_valid_cf:.2f} '
+                  f'| val_F1={vf1:.4f}')
             seed_epochs.append({
                 'ep': ep, 'val_f1': round(vf1, 6),
                 'total_loss': round(tl, 6), 'cls_loss': round(cl, 6), 'cons_loss': round(cons, 6),
+                'cons_batch_ratio': round(cons_batch_ratio, 6),
+                'avg_valid_cf_per_batch': round(avg_valid_cf, 6),
             })
             if vf1 > best_f1:
                 best_f1 = vf1
@@ -303,20 +468,51 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
                           DataLoader(HatersDataset(test_data, tokenizer, MAX_LEN,
                                                    mode='none'),
                                      batch_size=BATCH_SIZE, shuffle=False,
-                                     num_workers=4))
-        flip, lgap, sflip, sgap, fpr_gap, per_grp = eval_fairness(model, test_data, tokenizer)
+                                     num_workers=NUM_WORKERS))
+        (
+            flip, lgap, pair_acc, sflip, sgap, strict_pair_acc,
+            pair_count, strict_pair_count, fpr_gap, per_grp, per_grp_detail,
+            fairness_error_examples
+        ) = eval_fairness(model, test_data, tokenizer)
 
         print(f'  test F1={test_f1:.4f}  flip={flip:.4f}  prob_gap={lgap:.4f}  '
-              f'strict_flip={sflip:.4f}  strict_prob_gap={sgap:.4f}  fpr_gap={fpr_gap:.4f}')
+              f'pair_acc={pair_acc:.4f}  strict_flip={sflip:.4f}  '
+              f'strict_prob_gap={sgap:.4f}  strict_pair_acc={strict_pair_acc:.4f}  '
+              f'fpr_gap={fpr_gap:.4f}')
+        print(f'  eval pair counts: all={pair_count}  strict={strict_pair_count}')
         print(f'  per-group FPR: ' +
-              '  '.join(f'{k}={v:.3f}' for k, v in sorted(per_grp.items())))
+              '  '.join(
+                  f'{k}={v["fpr"]:.3f}(n={v["normal_n"]})'
+                  for k, v in sorted(per_grp_detail.items())
+              ))
 
         metrics['f1'].append(test_f1)
         metrics['flip_rate'].append(flip)
         metrics['prob_gap'].append(lgap)
+        metrics['pair_accuracy'].append(pair_acc)
         metrics['strict_flip_rate'].append(sflip)
         metrics['strict_prob_gap'].append(sgap)
+        metrics['strict_pair_accuracy'].append(strict_pair_acc)
+        metrics['pair_count'].append(pair_count)
+        metrics['strict_pair_count'].append(strict_pair_count)
+        metrics['train_valid_cf_count'].append(train_valid_cf_count)
+        metrics['train_valid_cf_ratio'].append(train_valid_cf_ratio)
+        metrics['lambda'].append(lam)
+        metrics['effective_lambda'].append(lam * train_valid_cf_ratio)
+        if seed_epochs:
+            metrics['cons_batch_ratio'].append(float(np.mean([e['cons_batch_ratio'] for e in seed_epochs])))
+            metrics['avg_valid_cf_per_batch'].append(float(np.mean([e['avg_valid_cf_per_batch'] for e in seed_epochs])))
         metrics['fpr_gap'].append(fpr_gap)
+        identity_group_ns = [
+            v['normal_n'] for k, v in per_grp_detail.items()
+            if k != 'none' and v['normal_n'] > 0
+        ]
+        metrics['fpr_min_group_n'].append(min(identity_group_ns) if identity_group_ns else 0)
+        metrics['per_group_fpr_detail'].append(per_grp_detail)
+        metrics['fairness_error_examples'].append({
+            'seed': seed,
+            'examples': fairness_error_examples,
+        })
         metrics['epoch_history'].append({'seed': seed, 'epochs': seed_epochs})
 
         del model; gc.collect(); torch.cuda.empty_cache()
@@ -327,9 +523,16 @@ def run_experiment(tag: str, mode: str, use_cons: bool, lam: float = LAMBDA,
     print(f'  Test Macro-F1      : {_s(metrics["f1"])}')
     print(f'  Flip Rate ↓        : {_s(metrics["flip_rate"])}')
     print(f'  Prob Gap ↓         : {_s(metrics["prob_gap"])}')
+    print(f'  Pair Accuracy ↑    : {_s(metrics["pair_accuracy"])}')
     print(f'  Strict Flip Rate ↓ : {_s(metrics["strict_flip_rate"])}')
     print(f'  Strict Prob Gap ↓  : {_s(metrics["strict_prob_gap"])}')
+    print(f'  Strict Pair Acc ↑  : {_s(metrics["strict_pair_accuracy"])}')
+    print(f'  Train valid CF     : {_s(metrics["train_valid_cf_ratio"])}')
+    print(f'  Cons batch ratio   : {_s(metrics["cons_batch_ratio"])}')
+    print(f'  Valid CF / batch   : {_s(metrics["avg_valid_cf_per_batch"])}')
+    print(f'  Eval pair counts   : all={_s(metrics["pair_count"])}  strict={_s(metrics["strict_pair_count"])}')
     print(f'  FPR Gap ↓          : {_s(metrics["fpr_gap"])}')
+    print(f'  FPR min group n    : {_s(metrics["fpr_min_group_n"])}')
     print(f'{"="*60}')
     return metrics
 
@@ -342,9 +545,62 @@ if __name__ == '__main__':
                         help='실행할 실험 tag (예: Strict-Gated "Naive Swap")')
     parser.add_argument('--seeds', nargs='+', type=int, default=None,
                         help='사용할 seed 목록 (예: 42 123)')
+    parser.add_argument('--model', default=None, help='HF model name override')
+    parser.add_argument('--batch_size', type=int, default=None)
+    parser.add_argument('--epochs', type=int, default=None)
+    parser.add_argument('--lr', type=float, default=None)
+    parser.add_argument('--lambda_', '--lambda', dest='lambda_value', type=float, default=None)
+    parser.add_argument('--subset', type=int, default=None,
+                        help='train subset size for quick smoke runs; 0 means full train')
+    parser.add_argument('--max_len', type=int, default=None)
+    parser.add_argument('--num_workers', type=int, default=None)
+    parser.add_argument('--base_dir', default=None,
+                        help='directory for data/checkpoints/results; default is script directory')
+    parser.add_argument('--result_path', default=None)
     args = parser.parse_args()
+    known_tags = set(AVAILABLE_EXPERIMENT_TAGS)
+    unknown_tags = unknown_experiment_tags(args.exp, known_tags)
+    if unknown_tags:
+        valid = sorted(known_tags) + ['Strict_lam=<positive_float>']
+        raise SystemExit(
+            f"Unknown --exp tag(s): {unknown_tags}. "
+            f"Valid choices: {valid}"
+        )
+    try:
+        lam_targets = parse_strict_lambda_tags(args.exp)
+    except ValueError as exc:
+        valid = sorted(known_tags) + ['Strict_lam=<positive_float>']
+        raise SystemExit(f"{exc}. Valid choices: {valid}")
+
+    if args.model:
+        MODEL_NAME = args.model
+    if args.batch_size:
+        BATCH_SIZE = args.batch_size
+    if args.epochs:
+        EPOCHS = args.epochs
+    if args.lr:
+        LR = args.lr
+    if args.lambda_value is not None:
+        LAMBDA = args.lambda_value
+    if args.subset is not None:
+        SUBSET = args.subset
+    if args.max_len:
+        MAX_LEN = args.max_len
+    if args.num_workers is not None:
+        NUM_WORKERS = args.num_workers
+    if args.base_dir:
+        BASE_DIR = args.base_dir
+    CKPT_DIR = os.path.join(BASE_DIR, 'checkpoints')
+    RESULT_PATH = args.result_path or os.path.join(BASE_DIR, 'results_final.json')
+    os.makedirs(CKPT_DIR, exist_ok=True)
     if args.seeds:
         SEEDS = args.seeds
+
+    print(f'Output dir: {BASE_DIR}')
+    dirty_suffix = ' (dirty)' if git_dirty() else ''
+    print(f'Git commit: {git_commit()}{dirty_suffix}  gate_version={GATE_VERSION}')
+    print(f'Batch size: {BATCH_SIZE}  epochs={EPOCHS}  lr={LR}  lambda={LAMBDA}')
+    print(f'num_workers={NUM_WORKERS}  subset={SUBSET}')
 
     print('\n--- Loading K-HATERS ---')
     raw_train = load_khaters('train',      SUBSET)
@@ -371,6 +627,7 @@ if __name__ == '__main__':
         strict_v       = compute_validity_strict(text, cf_text, orig_term, swap_term, cat)
         cf_pairs.append({
             'original': text, 'cf': cf_text,
+            'gate_version': GATE_VERSION,
             'orig_term': orig_term, 'swap_term': swap_term,
             'category': cat, 'label': label, 'targets': targets,
             **{f'base_{k}': v for k, v in base_v.items()},
@@ -386,6 +643,12 @@ if __name__ == '__main__':
           f'({100*n_swap/len(raw_train):.1f}%)')
     print(f'CF pairs saved → {cf_path}  '
           f'(total={n_swap}, base_valid={n_base_valid}, strict_valid={n_strict_valid})')
+    strict_matched_lam = coverage_matched_lambda(
+        LAMBDA, n_swap, n_strict_valid, max_lambda=MAX_MATCHED_LAMBDA
+    )
+    print(f'Strict-Matched lambda: {strict_matched_lam:.4f} '
+          f'(base={LAMBDA}, cap={MAX_MATCHED_LAMBDA}, '
+          f'reference=Naive valid CF {n_swap}, target=Strict valid CF {n_strict_valid})')
     print('swap category distribution (train):')
     for cat, cnt in cat_cnt.most_common():
         print(f'  {cat}: {cnt}')
@@ -398,68 +661,136 @@ if __name__ == '__main__':
         cf_lookup = load_cf_pairs(cf_path)
         print(f'Pre-computed CF pairs loaded: {len(cf_lookup)} entries → kiwi skipped for swap/gated/strict')
 
+    run_meta = {
+        'git_commit': git_commit(),
+        'git_dirty': git_dirty(),
+        'gate_version': GATE_VERSION,
+        'model': MODEL_NAME,
+        'max_len': MAX_LEN,
+        'batch_size': BATCH_SIZE,
+        'epochs': EPOCHS,
+        'lr': LR,
+        'weight_decay': WEIGHT_DECAY,
+        'lambda': LAMBDA,
+        'seeds': SEEDS,
+        'subset': SUBSET,
+        'num_workers': NUM_WORKERS,
+        'requested_exp': args.exp,
+        'result_path': RESULT_PATH,
+        'device': str(device),
+        'train_size': len(train_data),
+        'val_size': len(val_data),
+        'test_size': len(test_data),
+        'cf_pairs_total': n_swap,
+        'cf_pairs_base_valid': n_base_valid,
+        'cf_pairs_strict_valid': n_strict_valid,
+    }
+
+    existing_results_for_merge = {}
+    if os.path.exists(RESULT_PATH):
+        with open(RESULT_PATH, 'r', encoding='utf-8') as f:
+            existing_results_for_merge = json.load(f)
+        existing_meta = existing_results_for_merge.get('_meta')
+        if not existing_meta:
+            print('WARNING: existing result file has no _meta; use a fresh --result_path for paper tables.')
+        else:
+            for key in ('git_commit', 'gate_version', 'model', 'max_len'):
+                if existing_meta.get(key) != run_meta.get(key):
+                    print(f'WARNING: existing result _meta mismatch for {key}: '
+                          f'{existing_meta.get(key)} != {run_meta.get(key)}')
+
     ABLATIONS = [
         dict(tag='Baseline',        mode='none',   use_cons=False, lam=0.0),
         dict(tag='Masking Cons Reg',mode='mask',   use_cons=True,  lam=LAMBDA),
         dict(tag='Naive Swap',      mode='swap',   use_cons=True,  lam=LAMBDA),
         dict(tag='Validity-Gated',  mode='gated',  use_cons=True,  lam=LAMBDA),
         dict(tag='Strict-Gated',    mode='strict', use_cons=True,  lam=LAMBDA),
+        dict(tag='Strict-Matched',  mode='strict', use_cons=True,
+             lam=strict_matched_lam, lambda_strategy='coverage_matched_to_naive'),
     ]
 
     # --exp 인자로 특정 실험만 선택
     run_ablations = ABLATIONS
-    lam_targets = [0.05, 0.2]
     if args.exp:
         run_ablations = [e for e in ABLATIONS if e['tag'] in args.exp]
-        lam_targets   = [l for l in lam_targets if f'Strict_lam={l}' in args.exp]
+        if not run_ablations and not lam_targets:
+            valid = sorted(known_tags) + ['Strict_lam=<positive_float>']
+            raise SystemExit(f"No experiments selected. Valid choices: {valid}")
 
     all_results = {}
+    reported_renames = set()
+
+    def save_results_snapshot(save_stage: str, is_final: bool = False):
+        snapshot = build_result_snapshot(
+            all_results,
+            run_meta,
+            [name for name, value in all_results.items() if isinstance(value, dict) and 'f1' in value],
+            save_stage,
+            is_final,
+        )
+        if existing_results_for_merge:
+            snapshot, renames = merge_result_maps(existing_results_for_merge, snapshot, source='new_run')
+            for old_name, new_name in renames:
+                if (old_name, new_name) in reported_renames:
+                    continue
+                reported_renames.add((old_name, new_name))
+                print(f'WARNING: existing result "{old_name}" has different config; '
+                      f'saving new run as "{new_name}" instead of overwriting.')
+        tmp_path = RESULT_PATH + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, RESULT_PATH)
+        label = 'final' if is_final else 'checkpoint'
+        print(f'Results {label} saved ({save_stage}) → {RESULT_PATH}')
+        return snapshot
+
     for exp in run_ablations:
         print(f"\n{'#'*60}\n  Experiment: {exp['tag']}\n{'#'*60}")
         all_results[exp['tag']] = run_experiment(**exp, cf_lookup=cf_lookup)
+        save_results_snapshot(f'after {exp["tag"]}')
 
     # λ sensitivity (Strict-Gated; lam=0.1 is already in ABLATIONS)
     for lam in lam_targets:
         key = f'Strict_lam={lam}'
         all_results[key] = run_experiment(
-            tag=key, mode='strict', use_cons=True, lam=lam, n_epochs=3,
+            tag=key, mode='strict', use_cons=True, lam=lam, n_epochs=EPOCHS,
             cf_lookup=cf_lookup)
+        save_results_snapshot(f'after {key}')
 
     # Summary table
     def _fmt(lst): return f'{np.mean(lst):.4f}±{np.std(lst):.4f}' if lst else 'N/A'
+    def _fmt_pct(lst): return f'{100*np.mean(lst):.2f}±{100*np.std(lst):.2f}' if lst else 'N/A'
     print('\n' + '=' * 110)
-    print(f"  {'Model':<22} {'F1':>14} {'Flip Rate':>14} {'Prob Gap':>14} {'S-Flip Rate':>14} {'S-Prob Gap':>14}")
+    print(f"  {'Model':<22} {'F1':>14} {'Flip Rate':>14} {'Pair Acc':>14} {'S-Flip Rate':>14} {'S-Pair Acc':>14} {'Train CF%':>10}")
     print('=' * 110)
     for name, r in all_results.items():
+        if not isinstance(r, dict) or 'f1' not in r:
+            continue
         print(f"  {name:<22}  {_fmt(r['f1']):>14}  {_fmt(r['flip_rate']):>14}  "
-              f"{_fmt(r['prob_gap']):>14}  {_fmt(r['strict_flip_rate']):>14}  "
-              f"{_fmt(r['strict_prob_gap']):>14}")
+              f"{_fmt(r.get('pair_accuracy', [])):>14}  {_fmt(r['strict_flip_rate']):>14}  "
+              f"{_fmt(r.get('strict_pair_accuracy', [])):>14}  "
+              f"{_fmt_pct(r.get('train_valid_cf_ratio', [])):>10}")
 
-    # Paired t-test: Baseline vs Strict-Gated (flip rate)
-    for target in ['Strict-Gated', 'Validity-Gated', 'Naive Swap', 'Masking Cons Reg']:
+    # Paired t-tests: flip rate alone can reward consistently wrong predictions,
+    # so also report strict pair accuracy when available.
+    for target in ['Strict-Gated', 'Strict-Matched', 'Validity-Gated', 'Naive Swap', 'Masking Cons Reg']:
         if 'Baseline' in all_results and target in all_results:
-            b = all_results['Baseline']['flip_rate']
-            g = all_results[target]['flip_rate']
-            if len(b) == len(g) and len(b) > 1:
-                t, p = stats.ttest_rel(b, g)
-                print(f'\n  [t-test] Baseline vs {target} flip_rate  '
-                      f't={t:.4f}  p={p:.4f}  {"*significant*" if p < 0.05 else "n.s."} (α=0.05)'
-                      f'  (n={len(b)}, mean±std: {np.mean(b):.4f}±{np.std(b):.4f} → '
-                      f'{np.mean(g):.4f}±{np.std(g):.4f})')
+            for metric_name in ['flip_rate', 'strict_pair_accuracy']:
+                b = all_results['Baseline'].get(metric_name, [])
+                g = all_results[target].get(metric_name, [])
+                if len(b) == len(g) and len(b) > 1:
+                    t, p = stats.ttest_rel(b, g)
+                    print(f'\n  [t-test] Baseline vs {target} {metric_name}  '
+                          f't={t:.4f}  p={p:.4f}  {"*significant*" if p < 0.05 else "n.s."} (α=0.05)'
+                          f'  (n={len(b)}, mean±std: {np.mean(b):.4f}±{np.std(b):.4f} → '
+                          f'{np.mean(g):.4f}±{np.std(g):.4f})')
 
-    if os.path.exists(RESULT_PATH):
-        with open(RESULT_PATH, 'r', encoding='utf-8') as f:
-            existing = json.load(f)
-        existing.update(all_results)
-        all_results = existing
-    with open(RESULT_PATH, 'w', encoding='utf-8') as f:
-        json.dump(all_results, f, ensure_ascii=False, indent=2)
-    print(f'\nResults saved → {RESULT_PATH}')
+    saved_results = save_results_snapshot('final', is_final=True)
 
     import csv, statistics
     csv_path = RESULT_PATH.replace('.json', '.csv')
     rows = []
-    for exp_tag, metrics in all_results.items():
+    for exp_tag, metrics in saved_results.items():
         if not isinstance(metrics, dict) or 'f1' not in metrics:
             continue
         def _m(vals): return round(statistics.mean(vals), 4) if vals else ''
@@ -469,7 +800,23 @@ if __name__ == '__main__':
             'f1_mean': _m(metrics['f1']), 'f1_std': _s(metrics['f1']),
             'flip_rate_mean': _m(metrics['flip_rate']), 'flip_rate_std': _s(metrics['flip_rate']),
             'prob_gap_mean': _m(metrics['prob_gap']), 'prob_gap_std': _s(metrics['prob_gap']),
-            'strict_flip_mean': _m(metrics['strict_flip_rate']), 'strict_flip_std': _s(metrics['strict_flip_rate']),
+            'pair_accuracy_mean': _m(metrics.get('pair_accuracy', [])),
+            'pair_accuracy_std': _s(metrics.get('pair_accuracy', [])),
+            'strict_flip_rate_mean': _m(metrics['strict_flip_rate']),
+            'strict_flip_rate_std': _s(metrics['strict_flip_rate']),
+            'strict_prob_gap_mean': _m(metrics['strict_prob_gap']),
+            'strict_prob_gap_std': _s(metrics['strict_prob_gap']),
+            'strict_pair_accuracy_mean': _m(metrics.get('strict_pair_accuracy', [])),
+            'strict_pair_accuracy_std': _s(metrics.get('strict_pair_accuracy', [])),
+            'pair_count_mean': _m(metrics.get('pair_count', [])),
+            'strict_pair_count_mean': _m(metrics.get('strict_pair_count', [])),
+            'train_valid_cf_count_mean': _m(metrics.get('train_valid_cf_count', [])),
+            'train_valid_cf_ratio_mean': _m(metrics.get('train_valid_cf_ratio', [])),
+            'cons_batch_ratio_mean': _m(metrics.get('cons_batch_ratio', [])),
+            'avg_valid_cf_per_batch_mean': _m(metrics.get('avg_valid_cf_per_batch', [])),
+            'lambda_mean': _m(metrics.get('lambda', [])),
+            'effective_lambda_mean': _m(metrics.get('effective_lambda', [])),
+            'fpr_min_group_n_mean': _m(metrics.get('fpr_min_group_n', [])),
             'fpr_gap_mean': _m(metrics['fpr_gap']), 'fpr_gap_std': _s(metrics['fpr_gap']),
         })
     if rows:

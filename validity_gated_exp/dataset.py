@@ -11,6 +11,8 @@ from kiwipiepy import Kiwi
 import torch
 from torch.utils.data import Dataset
 
+GATE_VERSION = '2026-05-24-strict-context-v2'
+
 # ── Identity swap pairs ────────────────────────────────────────────────────────
 SWAP_PAIRS_BY_CAT: dict[str, list[tuple[str, str]]] = {
     'gender':     [('여성', '남성'), ('여자', '남자'), ('여성들', '남성들'),
@@ -144,12 +146,16 @@ _SEMANTIC_BLACKLIST: dict[str, list[str]] = {
 
 # Strict gate용 확장 blacklist (기존 항목 + 추가)
 _SEMANTIC_BLACKLIST_STRICT: dict[str, list[str]] = {
-    'ethnicity': _SEMANTIC_BLACKLIST['ethnicity'] + ['식민지', '침략', '전쟁범죄'],
+    'ethnicity': _SEMANTIC_BLACKLIST['ethnicity'] + [
+        '식민지', '침략', '전쟁범죄', '후쿠시마', '방사능', '원폭', '독도',
+    ],
     'gender':    _SEMANTIC_BLACKLIST['gender']    + ['생리', '군대', '병역', '군필'],
     'religion':  _SEMANTIC_BLACKLIST['religion']  + ['이단', '사이비', '교주', '세뇌'],
     'sexuality': _SEMANTIC_BLACKLIST['sexuality'] + ['에이즈', 'HIV', '성전환'],
-    'age':       _SEMANTIC_BLACKLIST['age']       + ['60대', '70대', '80대', '90대',
-                                                      '고령', '은퇴', '노후', '요양', '치매'],
+    'age':       _SEMANTIC_BLACKLIST['age']       + [
+        '60대', '70대', '80대', '90대', '고령', '은퇴', '노후', '요양', '치매',
+        '돼도', '되면', '될', '되었', '나이', '어렸', '어릴',
+    ],
     'disability': [],
 }
 
@@ -277,6 +283,7 @@ def compute_validity_strict(
         'label_preserving': label_preserving,
         'no_comparison':    no_comparison,
         'no_harmful_obj':   no_harmful_obj,
+        'no_age_contradiction': no_age_contradiction,
         'use_for_ccr':      use_for_ccr,
     }
 
@@ -336,6 +343,7 @@ def save_cf_pairs(examples: list, path: str) -> None:
         pairs.append({
             'original':  text,
             'cf':        cf_text,
+            'gate_version': GATE_VERSION,
             'orig_term': orig_term,
             'swap_term': swap_term,
             'category':  cat,
