@@ -1,10 +1,11 @@
 """
-run_strict_only.py — Strict-Gated 단독 실행 스크립트
-새 GPU 환경에서 Strict-Gated만 돌리고 results_strict.json 저장.
+run_strict_only.py — Strict-Gated 단독 실행 (ipynb Baseline과 동일 조건)
+
+LR=3e-5, BATCH_SIZE=256, fp16, num_workers=4, warmup 6%+linear decay
 
 Usage:
     python validity_gated_exp/run_strict_only.py
-    python validity_gated_exp/run_strict_only.py --cf_path /path/to/cf_pairs_train.jsonl
+    python validity_gated_exp/run_strict_only.py --cf_path /path/to/cf_pairs.jsonl
 """
 import os, sys, json, random, gc, argparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +16,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.cuda.amp import autocast, GradScaler
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 from sklearn.metrics import f1_score
 from tqdm.auto import tqdm
@@ -27,13 +27,14 @@ from dataset import (
     load_khaters, load_cf_pairs, HatersDataset,
 )
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# ── CLI ───────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
-parser.add_argument('--cf_path', default=None)
+parser.add_argument('--cf_path',     default=None)
 parser.add_argument('--result_path', default=None)
-parser.add_argument('--ckpt_dir', default=None)
+parser.add_argument('--ckpt_dir',    default=None)
 args = parser.parse_args()
 
+# ── Config (ipynb Baseline과 동일) ────────────────────────────────────────────
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 MODEL_NAME   = 'klue/roberta-base'
 MAX_LEN      = 128
@@ -52,10 +53,9 @@ os.makedirs(CKPT_DIR, exist_ok=True)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device : {device}')
 print(f'CF_PATH: {CF_PATH}')
-print(f'CKPT   : {CKPT_DIR}')
 print(f'RESULT : {RESULT_PATH}')
 
-# ── Seed / Model / Loss ───────────────────────────────────────────────────────
+# ── Seed ──────────────────────────────────────────────────────────────────────
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -63,6 +63,7 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+# ── Model ─────────────────────────────────────────────────────────────────────
 class HateDetector(nn.Module):
     def __init__(self, model_name: str, dropout: float = 0.1):
         super().__init__()
@@ -79,14 +80,15 @@ class HateDetector(nn.Module):
     def probs(self, input_ids, attention_mask):
         return F.softmax(self.forward(input_ids, attention_mask), dim=-1)
 
+# ── Loss ──────────────────────────────────────────────────────────────────────
 def sym_kl(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
     p = p.clamp(min=1e-8)
     q = q.clamp(min=1e-8)
     return (F.kl_div(q.log(), p, reduction='batchmean') +
             F.kl_div(p.log(), q, reduction='batchmean')) / 2
 
-# ── Train / Eval ──────────────────────────────────────────────────────────────
-_scaler = GradScaler()
+# ── Train ─────────────────────────────────────────────────────────────────────
+scaler = torch.cuda.amp.GradScaler()
 
 def train_epoch(model, loader, optimizer, scheduler, lam: float):
     model.train()
@@ -98,7 +100,7 @@ def train_epoch(model, loader, optimizer, scheduler, lam: float):
         valid = batch['cf_valid'].to(device)
 
         optimizer.zero_grad()
-        with autocast():
+        with torch.cuda.amp.autocast():
             logits   = model(ids, mask)
             cls_loss = F.cross_entropy(logits, y)
             loss     = cls_loss
@@ -107,23 +109,23 @@ def train_epoch(model, loader, optimizer, scheduler, lam: float):
             if 'cf_input_ids' in batch and valid.any():
                 cf_ids  = batch['cf_input_ids'].to(device)
                 cf_mask = batch['cf_attention_mask'].to(device)
-                p_o = F.softmax(logits[valid], dim=-1)           # 재사용, 추가 forward 없음
+                p_o = model.probs(ids[valid],    mask[valid])
                 p_c = model.probs(cf_ids[valid], cf_mask[valid])
                 c_val = sym_kl(p_o, p_c)
                 loss  = loss + lam * c_val
 
-        _scaler.scale(loss).backward()
-        _scaler.unscale_(optimizer)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        _scaler.step(optimizer)
-        _scaler.update()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
         s_total += loss.item(); s_cls += cls_loss.item(); s_cons += c_val.item()
 
     n = len(loader)
     return s_total / n, s_cls / n, s_cons / n
 
-
+# ── Eval ──────────────────────────────────────────────────────────────────────
 def eval_f1(model, loader) -> float:
     model.eval()
     preds, labels = [], []
@@ -199,10 +201,10 @@ def eval_fairness(model, test_examples, tokenizer):
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print('\n' + '='*60)
-    print('  Strict-Gated 단독 실행')
+    print('  Strict-Gated 단독 실행  (LR=3e-5, fp16, num_workers=4)')
     print('='*60)
 
-    print('\n데이터 로딩...')
+    print('\nK-HATERS 로딩...')
     train_data = load_khaters('train',      0)
     val_data   = load_khaters('validation', 0)
     test_data  = load_khaters('test',       0)
@@ -251,8 +253,7 @@ if __name__ == '__main__':
             if vf1 > best_f1:
                 best_f1    = vf1
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-                ckpt_path  = os.path.join(CKPT_DIR, f'Strict-Gated_seed{seed}.pt')
-                torch.save(best_state, ckpt_path)
+                torch.save(best_state, os.path.join(CKPT_DIR, f'Strict-Gated_seed{seed}.pt'))
 
         model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
         test_f1 = eval_f1(model, DataLoader(
