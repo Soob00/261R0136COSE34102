@@ -532,7 +532,11 @@ if __name__ == '__main__':
             f"Unknown --exp tag(s): {unknown_tags}. "
             f"Valid choices: {valid}"
         )
-    lam_targets = parse_strict_lambda_tags(args.exp)
+    try:
+        lam_targets = parse_strict_lambda_tags(args.exp)
+    except ValueError as exc:
+        valid = sorted(known_tags) + ['Strict_lam=<positive_float>']
+        raise SystemExit(f"{exc}. Valid choices: {valid}")
 
     if args.model:
         MODEL_NAME = args.model
