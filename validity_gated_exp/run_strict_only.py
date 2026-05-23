@@ -62,6 +62,8 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 class HateDetector(nn.Module):
@@ -88,9 +90,7 @@ def sym_kl(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
             F.kl_div(p.log(), q, reduction='batchmean')) / 2
 
 # ── Train ─────────────────────────────────────────────────────────────────────
-scaler = torch.cuda.amp.GradScaler()
-
-def train_epoch(model, loader, optimizer, scheduler, lam: float):
+def train_epoch(model, loader, optimizer, scheduler, scaler, lam: float):
     model.train()
     s_total = s_cls = s_cons = 0.0
     for batch in tqdm(loader, desc='  train', leave=False):
@@ -229,22 +229,31 @@ if __name__ == '__main__':
         print(f'\n[Strict-Gated] seed={seed}  lam={LAMBDA}')
         set_seed(seed)
 
+        def worker_init_fn(worker_id):
+            np.random.seed(seed + worker_id)
+            random.seed(seed + worker_id)
+
+        g = torch.Generator()
+        g.manual_seed(seed)
+
         tr_dl = DataLoader(
             HatersDataset(train_data, tokenizer, MAX_LEN, mode='strict', cf_lookup=cf_lookup),
             batch_size=BATCH_SIZE, shuffle=True, num_workers=4,
-            pin_memory=torch.cuda.is_available())
+            pin_memory=torch.cuda.is_available(),
+            worker_init_fn=worker_init_fn, generator=g)
 
         model        = HateDetector(MODEL_NAME).to(device)
         opt          = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
         total_steps  = len(tr_dl) * EPOCHS
         warmup_steps = max(1, int(0.06 * total_steps))
         scheduler    = get_linear_schedule_with_warmup(opt, warmup_steps, total_steps)
+        scaler       = torch.cuda.amp.GradScaler()
 
         best_f1, best_state, seed_epochs = 0.0, {}, []
         best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
         for ep in range(1, EPOCHS + 1):
-            tl, cl, cons = train_epoch(model, tr_dl, opt, scheduler, LAMBDA)
+            tl, cl, cons = train_epoch(model, tr_dl, opt, scheduler, scaler, LAMBDA)
             vf1 = eval_f1(model, va_dl)
             print(f'  ep{ep}: total={tl:.4f} cls={cl:.4f} cons={cons:.4f} | val_F1={vf1:.4f}')
             seed_epochs.append({'ep': ep, 'val_f1': round(vf1, 6),
