@@ -78,6 +78,7 @@ python validity_gated_exp/analyze_cf_pairs.py \
 - swappable train sample 수
 - base-valid, strict-valid pair 수와 비율
 - category별 strict-valid 비율
+- strict-only rejection matrix: category별로 어떤 gate 이유가 많이 작동했는지
 - strict gate가 reject한 대표 예시
 
 ## 3. Smoke Test
