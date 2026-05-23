@@ -47,6 +47,7 @@ REPORT_REQUIRED_METRICS = (
     "strict_prob_gap",
 )
 REPORT_CONFIG_KEYS = ("git_commit", "gate_version", "model", "max_len", "epochs", "batch_size", "lr")
+F1_TOLERANCE = 0.01
 
 
 def load_results(paths: list[Path]) -> dict[str, dict[str, Any]]:
@@ -137,6 +138,103 @@ def best_variant_by(results: dict[str, dict[str, Any]], names: list[str], metric
     if not scored:
         return None
     return max(scored, key=lambda x: x[1])
+
+
+def assess_claim(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Return a structured paper-claim recommendation from the current results."""
+    missing = [name for name in CORE_METHODS if name not in results]
+    if missing:
+        return {
+            "level": "incomplete",
+            "main_method": None,
+            "headline": "Run the missing core methods before writing a result claim.",
+            "rationale": [f"Missing core methods: {', '.join(missing)}."],
+            "report_action": "Do not use this result set as the final main table.",
+        }
+
+    strict_names = [name for name in results if is_strict_family(name)]
+    best_strict = best_variant_by(results, strict_names, "strict_pair_accuracy")
+    if not best_strict:
+        return {
+            "level": "incomplete",
+            "main_method": None,
+            "headline": "No strict-family result has Strict PairAcc.",
+            "rationale": ["Run Strict-Gated, Strict-Matched, or Strict_lam=* with current metrics."],
+            "report_action": "Do not claim validity-gated behavior yet.",
+        }
+
+    best_name, best_sp = best_strict
+    baseline_f1 = mean_or_none(results["Baseline"].get("f1"))
+    naive_f1 = mean_or_none(results["Naive Swap"].get("f1"))
+    best_f1 = mean_or_none(results[best_name].get("f1"))
+    naive_sp = mean_or_none(results["Naive Swap"].get("strict_pair_accuracy"))
+    naive_gap = mean_or_none(results["Naive Swap"].get("strict_prob_gap"))
+    best_gap = mean_or_none(results[best_name].get("strict_prob_gap"))
+    baseline_ref = baseline_f1 if baseline_f1 is not None else naive_f1
+
+    if best_f1 is None or naive_sp is None or baseline_ref is None:
+        return {
+            "level": "incomplete",
+            "main_method": best_name,
+            "headline": "The best gated row is present but key F1/PairAcc metrics are missing.",
+            "rationale": [
+                f"Best gated row: {best_name}.",
+                "Need Macro-F1, Naive Strict PairAcc, and gated Strict PairAcc.",
+            ],
+            "report_action": "Rerun or repair the result file before choosing a claim.",
+        }
+
+    f1_preserved = best_f1 >= baseline_ref - F1_TOLERANCE
+    beats_naive_pair = best_sp >= naive_sp
+    improves_prob_gap = best_gap is not None and naive_gap is not None and best_gap <= naive_gap
+    has_examples = bool(results[best_name].get("fairness_error_examples"))
+
+    rationale = [
+        f"Best gated row: {best_name}.",
+        f"Macro-F1: {best_f1:.4f} vs reference {baseline_ref:.4f} (tolerance {F1_TOLERANCE:.2f}).",
+        f"Strict PairAcc: gated {best_sp:.4f} vs Naive {naive_sp:.4f}.",
+    ]
+    if best_gap is not None and naive_gap is not None:
+        rationale.append(f"Strict ProbGap: gated {best_gap:.4f} vs Naive {naive_gap:.4f}.")
+    if not has_examples:
+        rationale.append("Qualitative error examples are missing for the best gated row.")
+
+    if beats_naive_pair and f1_preserved:
+        level = "strong_gated"
+        headline = "Validity-gated CCR is the main result."
+        report_action = (
+            "Use the best gated row as the primary method: it preserves Macro-F1 "
+            "and matches or beats Naive on Strict PairAcc."
+        )
+    elif f1_preserved and improves_prob_gap:
+        level = "soft_consistency_tradeoff"
+        headline = "Use a tradeoff claim: Naive wins hard PairAcc, gated improves soft consistency."
+        report_action = (
+            "Report Naive as the strongest hard-invariance baseline and the best gated row "
+            "as a validity-filtered method with probability-stability benefits."
+        )
+    elif f1_preserved:
+        level = "validity_coverage_tradeoff"
+        headline = "Use a validity-coverage tradeoff claim."
+        report_action = (
+            "Do not claim gated superiority. Emphasize that filtering invalid CFs is meaningful, "
+            "but reduced CF coverage can make Naive Swap stronger on hard pair metrics."
+        )
+    else:
+        level = "diagnostic_only"
+        headline = "Do not make the gated method the main positive result yet."
+        report_action = (
+            "Treat this as a diagnostic study unless another gated variant preserves F1. "
+            "Inspect lambda, coverage, and error examples before more training."
+        )
+
+    return {
+        "level": level,
+        "main_method": best_name,
+        "headline": headline,
+        "rationale": rationale,
+        "report_action": report_action,
+    }
 
 
 def paired_delta(values_a: Any, values_b: Any) -> list[float]:
@@ -567,6 +665,19 @@ def print_naive_vs_best_gated_diagnostic(results: dict[str, dict[str, Any]]) -> 
         )
 
 
+def print_claim_assessment(results: dict[str, dict[str, Any]]) -> None:
+    assessment = assess_claim(results)
+    print("\nClaim assessment")
+    print("----------------")
+    print(f"Level: {assessment['level']}")
+    if assessment.get("main_method"):
+        print(f"Main method: {assessment['main_method']}")
+    print(f"Headline: {assessment['headline']}")
+    for item in assessment.get("rationale", []):
+        print(f"- {item}")
+    print(f"Report action: {assessment['report_action']}")
+
+
 def print_next_step_recommendations(results: dict[str, dict[str, Any]]) -> None:
     print("\nRecommended next steps")
     print("----------------------")
@@ -688,6 +799,7 @@ def main() -> None:
     print_baseline_deltas(results)
     print_interpretation_notes(results)
     print_naive_vs_best_gated_diagnostic(results)
+    print_claim_assessment(results)
     print_next_step_recommendations(results)
     print_report_readiness_audit(results, metadata)
     print_error_example_summary(results)

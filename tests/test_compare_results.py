@@ -107,6 +107,71 @@ class CompareResultsTest(unittest.TestCase):
         )
         self.assertEqual(best, ("Strict_lam=0.2", 0.83))
 
+    def test_assess_claim_uses_best_strict_family_variant(self):
+        results = {
+            "Baseline": {"f1": [0.790]},
+            "Naive Swap": {
+                "f1": [0.792],
+                "strict_pair_accuracy": [0.820],
+                "strict_prob_gap": [0.020],
+            },
+            "Strict-Gated": {
+                "f1": [0.791],
+                "strict_pair_accuracy": [0.800],
+                "strict_prob_gap": [0.022],
+            },
+            "Strict-Matched": {
+                "f1": [0.793],
+                "strict_pair_accuracy": [0.825],
+                "strict_prob_gap": [0.018],
+                "fairness_error_examples": [{"seed": 42, "examples": {}}],
+            },
+        }
+
+        assessment = compare_results.assess_claim(results)
+        self.assertEqual(assessment["level"], "strong_gated")
+        self.assertEqual(assessment["main_method"], "Strict-Matched")
+        self.assertIn("Validity-gated CCR is the main result", assessment["headline"])
+
+    def test_assess_claim_distinguishes_soft_consistency_tradeoff(self):
+        results = {
+            "Baseline": {"f1": [0.790]},
+            "Naive Swap": {
+                "f1": [0.792],
+                "strict_pair_accuracy": [0.830],
+                "strict_prob_gap": [0.030],
+            },
+            "Strict-Gated": {
+                "f1": [0.789],
+                "strict_pair_accuracy": [0.820],
+                "strict_prob_gap": [0.018],
+                "fairness_error_examples": [{"seed": 42, "examples": {}}],
+            },
+        }
+
+        assessment = compare_results.assess_claim(results)
+        self.assertEqual(assessment["level"], "soft_consistency_tradeoff")
+        self.assertIn("probability-stability benefits", assessment["report_action"])
+
+    def test_assess_claim_flags_diagnostic_when_f1_is_not_preserved(self):
+        results = {
+            "Baseline": {"f1": [0.800]},
+            "Naive Swap": {"f1": [0.799], "strict_pair_accuracy": [0.820]},
+            "Strict-Gated": {"f1": [0.760], "strict_pair_accuracy": [0.830]},
+        }
+
+        assessment = compare_results.assess_claim(results)
+        self.assertEqual(assessment["level"], "diagnostic_only")
+        self.assertIn("Do not make the gated method", assessment["headline"])
+
+    def test_assess_claim_requires_core_methods(self):
+        assessment = compare_results.assess_claim({
+            "Baseline": {"f1": [0.79]},
+        })
+
+        self.assertEqual(assessment["level"], "incomplete")
+        self.assertIn("Missing core methods", "\n".join(assessment["rationale"]))
+
     def test_paired_delta_requires_matched_seed_count(self):
         self.assertEqual(compare_results.paired_delta([0.83, 0.84], [0.82, 0.83]), [0.010000000000000009, 0.010000000000000009])
         self.assertEqual(compare_results.paired_delta([0.83], [0.82, 0.83]), [])

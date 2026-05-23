@@ -243,6 +243,7 @@ python validity_gated_exp/compare_results.py \
 `FPR minN`은 identity category별 FPR을 계산할 때 가장 작은 normal-sample group 크기입니다. 이 값이 작으면 `FPR Gap`은 보조 지표로만 해석합니다.
 `Best strict-family variant`는 `Strict-Gated`, `Strict-Matched`, `Strict_lam=*` 중 Strict Pair Acc가 가장 높은 gated 계열 결과를 골라줍니다. 보고서 대표 gated 결과를 고를 때 이 섹션을 먼저 확인합니다.
 `Naive vs best gated paired diagnostic`은 같은 seed끼리 best gated와 Naive를 비교합니다. 평균 차이가 작으면 몇 개 seed에서 방향이 유지되는지까지 확인한 뒤 claim 강도를 정합니다.
+`Claim assessment`는 현재 결과를 `strong_gated`, `soft_consistency_tradeoff`, `validity_coverage_tradeoff`, `diagnostic_only`, `incomplete` 중 하나로 분류합니다. 이 분류를 보고 Abstract/Conclusion의 claim 강도를 정합니다.
 `Recommended next steps`는 현재 결과 기준으로 후속 실험이 더 필요한지 알려줍니다. Naive가 gated 계열보다 강하면 `Strict-Matched`와 `Strict_lam=*` follow-up을 먼저 돌리고, gated가 충분히 강하면 method search를 멈추고 error analysis/report로 넘어갑니다.
 `Report readiness audit`에 `FAIL`이 하나라도 있으면 final report 표로 쓰기 전에 해당 조건을 다시 실행합니다. `WARN`은 보고서에서 보조 지표/한계로 명시합니다.
 
@@ -291,3 +292,11 @@ python validity_gated_exp/compare_results.py \
 
 Strict-Gated가 Naive Swap보다 항상 좋아진다는 보장은 없습니다. Naive가 이기면 실패로 처리하지 말고, `TrainCF%`, `ConsBatch%`, `ValidCF/B`, strict rejection breakdown을 근거로 "strong invariance vs validity filtering" trade-off로 해석합니다.
 이때 `fairness_error_examples`에서 Naive와 Strict 계열의 `both_wrong`, `strict_flip`, `false_positive_*` 사례를 비교해, 어떤 방법이 실제 혐오/비혐오 판단을 망치는지 정성 분석을 붙입니다.
+
+`Claim assessment` 해석:
+
+- `strong_gated`: best gated row가 Macro-F1을 유지하면서 Naive의 Strict Pair Acc를 이겼거나 동률입니다. 이때만 gated method를 main positive result로 씁니다.
+- `soft_consistency_tradeoff`: Naive가 hard Pair Acc는 이기지만 gated가 Macro-F1을 유지하고 Strict ProbGap을 낮춥니다. "hard-label invariance vs probability stability" trade-off로 씁니다.
+- `validity_coverage_tradeoff`: gated가 F1은 유지하지만 Naive보다 pair metric이 약합니다. strict gate가 invalid CF를 줄이는 대신 training signal coverage를 줄인다는 진단형 claim으로 씁니다.
+- `diagnostic_only`: gated가 F1을 유지하지 못합니다. main method claim을 낮추고 lambda/coverage/error examples를 중심으로 실패 분석을 씁니다.
+- `incomplete`: core method나 핵심 metric이 빠졌습니다. 보고서용 결론을 쓰지 말고 먼저 재실행합니다.
