@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 __pycache__/
 *.pyc
 .venv/
@@ -10,3 +11,22 @@ tmp_peek.py
 hi/
 .claude/
 .ipynb_checkpoints/
+=======
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Large or generated experiment artifacts
+*.log
+validity_gated_exp/checkpoints/
+validity_gated_exp/data/*
+!validity_gated_exp/data/.gitkeep
+validity_gated_exp/results*.json
+validity_gated_exp/results*.csv
+
+# Local caches
+.cache/
+hf_cache/
+wandb/
+>>>>>>> main
